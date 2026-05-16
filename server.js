@@ -11,6 +11,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const business = require("./routes/business.routes");
 const auth = require("./routes/auth.routes");
+const vehicle = require("./routes/vehicle.routes");
 const cors = require("cors");
 const path = require("path");
 
@@ -33,6 +34,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // API
 app.use("/api/business", business);
 app.use("/api/auth", auth);
+app.use("/api/vehicles", vehicle);
 
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
