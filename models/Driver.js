@@ -2,6 +2,12 @@ const mongoose = require("mongoose");
 
 const driverSchema = new mongoose.Schema(
   {
+    businessId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Business",
+  required: true,
+  index: true,
+},
     // DRIVER ID
     driverId: {
       type: String,

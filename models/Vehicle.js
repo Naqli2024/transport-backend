@@ -19,7 +19,7 @@ const loggedHrsSchema = new mongoose.Schema(
       default: "Ongoing",
     },
   },
-  { _id: true }
+  { _id: true },
 );
 
 /* =====================================
@@ -35,17 +35,12 @@ const complianceSchema = new mongoose.Schema(
     expiryDate: Date,
     status: {
       type: String,
-      enum: [
-        "Valid",
-        "Due Soon",
-        "Critical",
-        "Expired",
-      ],
+      enum: ["Valid", "Due Soon", "Critical", "Expired"],
       default: "Valid",
     },
     fine: String,
   },
-  { _id: true }
+  { _id: true },
 );
 
 /* =====================================
@@ -65,7 +60,7 @@ const routeStopSchema = new mongoose.Schema(
 
     stopOrder: Number,
   },
-  { _id: true }
+  { _id: true },
 );
 
 /* =====================================
@@ -107,16 +102,7 @@ const routeSchema = new mongoose.Schema(
     daysOfWeek: [
       {
         type: String,
-        enum: [
-          "Mon",
-          "Tue",
-          "Wed",
-          "Thu",
-          "Fri",
-          "Sat",
-          "Sun",
-          "Daily",
-        ],
+        enum: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Daily"],
       },
     ],
 
@@ -130,15 +116,11 @@ const routeSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: [
-        "Active",
-        "Inactive",
-        "Completed",
-      ],
+      enum: ["Active", "Inactive", "Completed"],
       default: "Active",
     },
   },
-  { _id: true, timestamps: true }
+  { _id: true, timestamps: true },
 );
 
 /* =====================================
@@ -186,11 +168,17 @@ const ticketLogSchema = new mongoose.Schema(
 
     remarks: String,
   },
-  { _id: true, timestamps: true }
+  { _id: true, timestamps: true },
 );
 
 const vehicleSchema = new mongoose.Schema(
   {
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
     regNo: {
       type: String,
       required: true,
@@ -198,12 +186,7 @@ const vehicleSchema = new mongoose.Schema(
     fleet: {
       type: String,
       required: true,
-      enum: [
-        "vehicle",
-        "equipment",
-        "bus",
-        "tyre",
-      ],
+      enum: ["vehicle", "equipment", "bus", "tyre"],
     },
     type: {
       type: String,
@@ -225,11 +208,11 @@ const vehicleSchema = new mongoose.Schema(
         "Grader",
         "Concrete",
         "Transit",
-        "Bus"
+        "Bus",
       ],
     },
     make: String,
-    model:  String,
+    model: String,
     year: Number,
     engineNo: String,
     chassisNo: String,
@@ -256,7 +239,7 @@ const vehicleSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: [        
+      enum: [
         "Active",
         "In Transit",
         "Maintenance",
@@ -266,8 +249,8 @@ const vehicleSchema = new mongoose.Schema(
         "On Site",
         "Available",
         "Overdue Compliance",
-    ],
-      default: "Available"
+      ],
+      default: "Available",
     },
 
     /**Equipment***/
@@ -342,7 +325,7 @@ const vehicleSchema = new mongoose.Schema(
       },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Vehicle", vehicleSchema);

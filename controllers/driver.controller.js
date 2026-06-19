@@ -7,13 +7,13 @@ const Vehicle = require("../models/Vehicle");
 
 exports.createDriver = async (req, res) => {
   try {
-    const {
-      mobile,
-      dlNo,
-    } = req.body;
+    const businessId = req.user.businessId;
+
+    const { mobile, dlNo } = req.body;
 
     // DUPLICATE MOBILE
     const existingMobile = await Driver.findOne({
+      businessId,
       mobile,
     });
 
@@ -26,6 +26,7 @@ exports.createDriver = async (req, res) => {
 
     // DUPLICATE LICENSE
     const existingLicense = await Driver.findOne({
+      businessId,
       dlNo: dlNo.toUpperCase(),
     });
 
@@ -38,6 +39,7 @@ exports.createDriver = async (req, res) => {
 
     // CREATE DRIVER
     const driver = await Driver.create({
+      businessId,
       ...req.body,
       dlNo: dlNo.toUpperCase(),
     });
@@ -61,7 +63,11 @@ exports.createDriver = async (req, res) => {
 
 exports.getDrivers = async (req, res) => {
   try {
-    const drivers = await Driver.find()
+    const businessId = req.user.businessId;
+
+    const drivers = await Driver.find({
+      businessId,
+    })
       .populate("vehicle.vehicleId")
       .sort({ createdAt: -1 });
 
@@ -84,10 +90,15 @@ exports.getDrivers = async (req, res) => {
 
 exports.getDriver = async (req, res) => {
   try {
+    const businessId = req.user.businessId;
+
     const { driverId } = req.params;
 
-    const driver = await Driver.findById(driverId)
-      .populate("vehicle.vehicleId");
+    const driver = await Driver.findOne({
+      _id: req.params.driverId,
+
+      businessId,
+    }).populate("vehicle.vehicleId");
 
     if (!driver) {
       return res.status(404).json({
@@ -114,9 +125,15 @@ exports.getDriver = async (req, res) => {
 
 exports.updateDriver = async (req, res) => {
   try {
+    const businessId = req.user.businessId;
+
     const { driverId } = req.params;
 
-    const driver = await Driver.findById(driverId);
+    // CHECK DRIVER EXISTS
+    const driver = await Driver.findOne({
+      _id: driverId,
+      businessId,
+    });
 
     if (!driver) {
       return res.status(404).json({
@@ -125,20 +142,62 @@ exports.updateDriver = async (req, res) => {
       });
     }
 
-    // UPDATE
-    const updatedDriver = await Driver.findByIdAndUpdate(
-      driverId,
+    // ============================
+    // DUPLICATE MOBILE CHECK
+    // ============================
+
+    if (req.body.mobile) {
+      const existingMobile = await Driver.findOne({
+        businessId,
+        mobile: req.body.mobile,
+        _id: { $ne: driverId },
+      });
+
+      if (existingMobile) {
+        return res.status(400).json({
+          success: false,
+          message: "Mobile number already exists",
+        });
+      }
+    }
+
+    // ============================
+    // DUPLICATE LICENSE CHECK
+    // ============================
+
+    if (req.body.dlNo) {
+      const existingLicense = await Driver.findOne({
+        businessId,
+        dlNo: req.body.dlNo.toUpperCase(),
+        _id: { $ne: driverId },
+      });
+
+      if (existingLicense) {
+        return res.status(400).json({
+          success: false,
+          message: "License already exists",
+        });
+      }
+    }
+
+    // ============================
+    // UPDATE DRIVER
+    // ============================
+
+    const updatedDriver = await Driver.findOneAndUpdate(
+      {
+        _id: driverId,
+        businessId,
+      },
       {
         ...req.body,
 
-        dlNo: req.body.dlNo
-          ? req.body.dlNo.toUpperCase()
-          : driver.dlNo,
+        dlNo: req.body.dlNo ? req.body.dlNo.toUpperCase() : driver.dlNo,
       },
       {
         new: true,
         runValidators: true,
-      }
+      },
     ).populate("vehicle.vehicleId");
 
     res.status(200).json({
@@ -160,9 +219,13 @@ exports.updateDriver = async (req, res) => {
 
 exports.deleteDriver = async (req, res) => {
   try {
-    const { driverId } = req.params;
+    const businessId = req.user.businessId;
 
-    const driver = await Driver.findById(driverId);
+    const driver = await Driver.findOne({
+      _id: req.params.driverId,
+
+      businessId,
+    });
 
     if (!driver) {
       return res.status(404).json({
@@ -171,7 +234,10 @@ exports.deleteDriver = async (req, res) => {
       });
     }
 
-    await Driver.findByIdAndDelete(driverId);
+    await Driver.deleteOne({
+      _id: req.params.driverId,
+      businessId,
+    });
 
     res.status(200).json({
       success: true,
@@ -185,54 +251,69 @@ exports.deleteDriver = async (req, res) => {
   }
 };
 
-/* =================================
-   ASSIGN VEHICLE
-================================= */
-
-exports.assignVehicle = async (req, res) => {
+exports.getDriverDashboard = async (req, res) => {
   try {
-    const { driverId } = req.params;
+    const businessId = req.user.businessId;
 
-    const { vehicleId } = req.body;
+    const drivers = await Driver.find({
+      businessId,
+    });
 
-    // FIND DRIVER
-    const driver = await Driver.findById(driverId);
+    const totalDrivers = drivers.length;
 
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
+    const available = drivers.filter(
+      (d) => d.availableStatus === "Available",
+    ).length;
 
-    // FIND VEHICLE
-    const vehicle = await Vehicle.findById(vehicleId);
+    const onTrip = drivers.filter(
+      (d) => d.availableStatus === "On Trip",
+    ).length;
 
-    if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message: "Vehicle not found",
-      });
-    }
+    const onLeave = drivers.filter(
+      (d) => d.availableStatus === "On Leave",
+    ).length;
 
-    // ASSIGN VEHICLE
-    driver.vehicle = {
-      status: "Assigned",
-      vehicleId: vehicle._id,
-      regNo: vehicle.regNo,
-      assignedDate: new Date(),
-    };
+    const assigned = drivers.filter(
+      (d) => d.vehicle?.status === "Assigned",
+    ).length;
 
-    driver.availableStatus = "On Trip";
+    const unassigned = drivers.filter(
+      (d) => d.vehicle?.status === "Unassigned",
+    ).length;
 
-    await driver.save();
+    const today = new Date();
+
+    let licenseExpiring = 0;
+
+    drivers.forEach((driver) => {
+      if (!driver.licenseExpiryDate) return;
+
+      const expiry = new Date(driver.licenseExpiryDate);
+
+      const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+
+      if (diffDays <= 30) {
+        licenseExpiring++;
+      }
+    });
 
     res.status(200).json({
       success: true,
-      message: "Vehicle assigned successfully",
-      data: driver,
-    });
 
+      data: {
+        summary: {
+          totalDrivers,
+          available,
+          onTrip,
+          onLeave,
+          assigned,
+          unassigned,
+          licenseExpiring,
+        },
+
+        drivers,
+      },
+    });
   } catch (error) {
     res.status(500).json({
       success: false,

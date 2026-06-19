@@ -8,21 +8,19 @@ const {
   getDriver,
   updateDriver,
   deleteDriver,
-  assignVehicle,
-  unassignVehicle,
+  getDriverDashboard,
 } = require("../controllers/driver.controller");
-
 
 router.post("/add-driver", auth, createDriver);
 
 router.get("/", auth, getDrivers);
+
+router.get("/dashboard", auth, getDriverDashboard);
 
 router.get("/:driverId", auth, getDriver);
 
 router.put("/:driverId", auth, updateDriver);
 
 router.delete("/:driverId", auth, deleteDriver);
-
-router.put("/assign-vehicle/:driverId", auth, assignVehicle);
 
 module.exports = router;
