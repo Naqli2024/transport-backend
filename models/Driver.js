@@ -3,11 +3,11 @@ const mongoose = require("mongoose");
 const driverSchema = new mongoose.Schema(
   {
     businessId: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "Business",
-  required: true,
-  index: true,
-},
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      required: true,
+      index: true,
+    },
     // DRIVER ID
     driverId: {
       type: String,
@@ -42,12 +42,7 @@ const driverSchema = new mongoose.Schema(
 
     dlClass: {
       type: String,
-      enum: [
-        "LMV",
-        "HMV",
-        "Transport",
-        "Heavy",
-      ],
+      enum: ["LMV", "HMV", "Transport", "Heavy"],
     },
 
     licenseExpiryDate: String,
@@ -87,7 +82,7 @@ const driverSchema = new mongoose.Schema(
       default: 0,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 /* =================================
@@ -102,22 +97,17 @@ driverSchema.pre("save", async function () {
 
   const Driver = mongoose.model("Driver");
 
-  const lastDriver = await Driver.findOne()
-    .sort({ createdAt: -1 });
+  const lastDriver = await Driver.findOne().sort({ createdAt: -1 });
 
   let nextNumber = 1;
 
   if (lastDriver && lastDriver.driverId) {
-
-    const lastNumber = parseInt(
-      lastDriver.driverId.split("-")[1]
-    );
+    const lastNumber = parseInt(lastDriver.driverId.split("-")[1]);
 
     nextNumber = lastNumber + 1;
   }
 
-  this.driverId =
-    `DRV-${String(nextNumber).padStart(3, "0")}`;
+  this.driverId = `DRV-${String(nextNumber).padStart(3, "0")}`;
 });
 
 module.exports = mongoose.model("Driver", driverSchema);
