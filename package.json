@@ -11,7 +11,8 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@google-cloud/storage": "^7.19.0",
+    "@google-cloud/storage": "^7.21.0",
+    "@google-cloud/vision": "^5.3.7",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

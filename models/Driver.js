@@ -63,19 +63,23 @@ const driverSchema = new mongoose.Schema(
       type: String,
       enum: [
         "Available",
+        "Reserved",
         "On Trip",
         "On Leave",
         "Resting",
         "Sick Leave",
         "Inactive",
-        "Training",
-        "Emergency",
       ],
       default: "Available",
     },
     score: {
       type: Number,
       default: 0,
+    },
+    currentTripId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Trip",
+      default: null,
     },
     totalTrips: {
       type: Number,

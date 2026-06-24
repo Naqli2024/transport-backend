@@ -1,5 +1,6 @@
 const Driver = require("../models/Driver");
 const Vehicle = require("../models/Vehicle");
+const Trip = require("../models/Trip");
 
 /* =================================
    CREATE DRIVER
@@ -95,8 +96,7 @@ exports.getDriver = async (req, res) => {
     const { driverId } = req.params;
 
     const driver = await Driver.findOne({
-      _id: req.params.driverId,
-
+      _id: driverId,
       businessId,
     }).populate("vehicle.vehicleId");
 
@@ -257,28 +257,34 @@ exports.getDriverDashboard = async (req, res) => {
 
     const drivers = await Driver.find({
       businessId,
-    });
+    })
+      .populate("vehicle.vehicleId")
+      .sort({ createdAt: -1 });
 
     const totalDrivers = drivers.length;
 
     const available = drivers.filter(
-      (d) => d.availableStatus === "Available",
+      (d) => d.availableStatus === "Available"
+    ).length;
+
+    const reserved = drivers.filter(
+      (d) => d.availableStatus === "Reserved"
     ).length;
 
     const onTrip = drivers.filter(
-      (d) => d.availableStatus === "On Trip",
+      (d) => d.availableStatus === "On Trip"
     ).length;
 
     const onLeave = drivers.filter(
-      (d) => d.availableStatus === "On Leave",
+      (d) => d.availableStatus === "On Leave"
     ).length;
 
     const assigned = drivers.filter(
-      (d) => d.vehicle?.status === "Assigned",
+      (d) => d.vehicle?.status === "Assigned"
     ).length;
 
     const unassigned = drivers.filter(
-      (d) => d.vehicle?.status === "Unassigned",
+      (d) => d.vehicle?.status === "Unassigned"
     ).length;
 
     const today = new Date();
@@ -290,28 +296,72 @@ exports.getDriverDashboard = async (req, res) => {
 
       const expiry = new Date(driver.licenseExpiryDate);
 
-      const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+      const diffDays = Math.ceil(
+        (expiry - today) / (1000 * 60 * 60 * 24)
+      );
 
-      if (diffDays <= 30) {
+      if (diffDays >= 0 && diffDays <= 30) {
         licenseExpiring++;
       }
     });
 
+    // ======================================
+    // ACTIVE TRIPS
+    // ======================================
+
+    const activeTrips = await Trip.find({
+      businessId,
+      tripStatus: {
+        $in: ["Ready To Start", "In Transit"],
+      },
+    })
+      .select(
+        "_id tripNo tripStatus vehicleId driver1 driver2 customerName"
+      )
+      .lean();
+
+    // ======================================
+    // DRIVER DETAILS WITH CURRENT TRIP
+    // ======================================
+
+    const driverDetails = drivers.map((driver) => {
+      const currentTrip = activeTrips.find(
+        (trip) =>
+          trip.driver1?.toString() === driver._id.toString() ||
+          trip.driver2?.toString() === driver._id.toString()
+      );
+
+      return {
+        ...driver.toObject(),
+
+        currentTrip: currentTrip
+          ? {
+              tripId: currentTrip._id,
+              tripNo: currentTrip.tripNo,
+              tripStatus: currentTrip.tripStatus,
+              customerName: currentTrip.customerName,
+              vehicleId: currentTrip.vehicleId,
+            }
+          : null,
+      };
+    });
+
     res.status(200).json({
       success: true,
-
       data: {
         summary: {
           totalDrivers,
           available,
+          reserved,
           onTrip,
           onLeave,
           assigned,
           unassigned,
           licenseExpiring,
+          activeTrips: activeTrips.length,
         },
 
-        drivers,
+        drivers: driverDetails,
       },
     });
   } catch (error) {

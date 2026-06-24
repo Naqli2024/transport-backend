@@ -1,0 +1,169 @@
+const Trip = require("../models/Trip");
+const Vehicle = require("../models/Vehicle");
+const PreTripInspection = require("../models/PreTripInspection");
+
+exports.createPreTripInspection = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const { tripId, vehicleId, inspectedBy } = req.body;
+
+    const trip = await Trip.findOne({
+      _id: tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    // Only pending trips can be inspected
+
+    if (trip.tripStatus !== "Pre Trip Pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    // Vehicle validation
+
+    if (
+      trip.fleetSource === "Own Fleet" &&
+      trip.vehicleId?.toString() !== vehicleId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Inspection vehicle does not match trip vehicle",
+      });
+    }
+
+    if (
+      trip.fleetSource === "Vendor" &&
+      trip.vendorVehicleId?.toString() !== vehicleId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Inspection vehicle does not match vendor vehicle",
+      });
+    }
+
+    // Driver validation
+
+    if (trip.driver1 && trip.driver1.toString() !== inspectedBy) {
+      return res.status(400).json({
+        success: false,
+        message: "Only assigned driver can perform inspection",
+      });
+    }
+
+    // Duplicate inspection
+
+    const existingInspection = await PreTripInspection.findOne({
+      tripId,
+      businessId,
+    });
+
+    if (existingInspection) {
+      return res.status(400).json({
+        success: false,
+        message: "Pre-trip inspection already completed",
+      });
+    }
+
+    const checks = [
+      req.body.engineOil,
+      req.body.coolant,
+      req.body.brakes,
+      req.body.tyres,
+      req.body.lights,
+      req.body.horn,
+      req.body.fuel,
+      req.body.documents,
+      req.body.fireExtinguisher,
+      req.body.firstAidKit,
+    ];
+
+    const passed = checks.every((item) => item === true);
+
+    const inspection = await PreTripInspection.create({
+      businessId,
+      ...req.body,
+      inspectionStatus: passed ? "Passed" : "Failed",
+    });
+
+    if (passed) {
+      await Trip.findByIdAndUpdate(trip._id, {
+        tripStatus: "Ready To Start",
+      });
+    } else {
+      await Trip.findByIdAndUpdate(trip._id, {
+        tripStatus: "Pre Trip Pending",
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Inspection submitted successfully",
+      data: inspection,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Get all
+exports.getPreTripInspections = async (req, res) => {
+  try {
+    const inspections = await PreTripInspection.find({
+      businessId: req.user.businessId,
+    })
+      .populate("tripId")
+      .populate("vehicleId")
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: inspections.length,
+      data: inspections,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Get One
+exports.getPreTripInspection = async (req, res) => {
+  try {
+    const inspection = await PreTripInspection.findOne({
+      _id: req.params.id,
+      businessId: req.user.businessId,
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        success: false,
+        message: "Inspection not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: inspection,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

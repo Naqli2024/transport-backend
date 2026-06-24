@@ -326,8 +326,7 @@ exports.getAllVehicles = async (req, res) => {
     const businessId = req.user.businessId;
 
     const vehicles = await Vehicle.find({
-      businessId,
-      fleet: "vehicle",
+      businessId
     }).sort({ createdAt: -1 });
 
     res.status(200).json({

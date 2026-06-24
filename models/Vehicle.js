@@ -241,6 +241,7 @@ const vehicleSchema = new mongoose.Schema(
       type: String,
       enum: [
         "Active",
+        "Reserved",
         "In Transit",
         "Maintenance",
         "Breakdown",
