@@ -59,15 +59,70 @@ const tripSchema = new mongoose.Schema(
       enum: ["Account", "Cash"],
     },
 
-    customerName: String,
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      required: true,
+    },
 
-    brokerName: String,
+    brokerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Broker",
+    },
+
+    origin: {
+      location: String,
+      city: String,
+      state: String,
+      latitude: Number,
+      longitude: Number,
+    },
+
+    destination: {
+      location: String,
+      city: String,
+      state: String,
+      latitude: Number,
+      longitude: Number,
+    },
+
+    journeyLegs: [
+      {
+        legNo: Number,
+
+        from: String,
+
+        to: String,
+
+        customerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Customer",
+        },
+
+        brokerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Broker",
+        },
+
+        status: {
+          type: String,
+          enum: ["Pending", "In Progress", "Completed"],
+          default: "Pending",
+        },
+      },
+    ],
+
+    currentLeg: {
+      type: Number,
+      default: 1,
+    },
 
     lrNo: String,
 
     driver1: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
+      required: true,
     },
 
     driver2: {
@@ -126,6 +181,9 @@ const tripSchema = new mongoose.Schema(
       ],
       default: "Pre Trip Pending",
     },
+    startTime: Date,
+
+    endTime: Date,
   },
   {
     timestamps: true,

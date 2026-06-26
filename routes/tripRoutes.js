@@ -7,6 +7,7 @@ const {
   getTrip,
   updateTrip,
   deleteTrip,
+  startTrip,
   getTripDashboard,
 } = require("../controllers/tripController");
 
@@ -21,5 +22,7 @@ router.get("/:id", auth, getTrip);
 router.put("/:id", auth, updateTrip);
 
 router.delete("/:id", auth, deleteTrip);
+
+router.put("/:tripId/start", auth, startTrip);
 
 module.exports = router;

@@ -19,6 +19,8 @@ const vendor = require("./routes/vendorRoutes");
 const vendorVehicles = require("./routes/vendorVehicleRoutes");
 const trips = require("./routes/tripRoutes");
 const inspection = require("./routes/inspection.routes");
+const customer = require("./routes/customer.routes");
+const broker = require("./routes/broker.routes");
 const cors = require("cors");
 const path = require("path");
 
@@ -49,6 +51,8 @@ app.use("/api/vendor", vendor);
 app.use("/api/vendor-vehicle", vendorVehicles);
 app.use("/api/trips", trips);
 app.use("/api/inspection", inspection);
+app.use("/api/customer", customer);
+app.use("/api/broker", broker);
 
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
