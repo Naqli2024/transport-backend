@@ -1,25 +1,21 @@
-// const express = require("express");
-// const router = express.Router();
+const express = require("express");
+const router = express.Router();
+const auth = require("../middleware/auth.middleware");
 
-// const auth = require("../middleware/auth.middleware");
-// const upload = require("../middleware/upload");
+const {
+  createFuelEntry,
+  getTripFuelEntries,
+  updateFuelEntry,
+  deleteFuelEntry,
+  getTripFuelSummary,
+  getFuelDashboard,
+} = require("../controllers/fuelEntry.controller");
 
-// const {
-//   uploadFuelBill,
-//   approveFuel,
-//   rejectFuel,
-//   getFuelDashboard,
-//   getFuels,
-// } = require("../controllers/fuel.controller");
+router.post("/:tripId/entry", auth, createFuelEntry);
+router.get("/dashboard", auth, getFuelDashboard);
+router.get("/:tripId/summary", auth, getTripFuelSummary);
+router.get("/:tripId/fuel", auth, getTripFuelEntries);
+router.put("/:fuelId", auth, updateFuelEntry);
+router.delete("/:fuelId", auth, deleteFuelEntry);
 
-// // router.post("/upload-bill", auth, upload.single("bill"), uploadFuelBill);
-
-// // router.get("/", auth, getFuels);
-
-// // router.get("/dashboard", auth, getFuelDashboard);
-
-// // router.put("/:id/approve", auth, approveFuel);
-
-// // router.put("/:id/reject", auth, rejectFuel);
-
-// module.exports = router;
+module.exports = router;

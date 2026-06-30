@@ -5,6 +5,8 @@ const Driver = require("../models/Driver");
 const Customer = require("../models/Customer");
 const Broker = require("../models/Broker");
 const PreTripInspection = require("../models/PreTripInspection");
+const PostTripInspection = require("../models/PostTripInspection");
+const Fuel = require("../models/Fuel");
 
 /* ===============================
    CREATE TRIP
@@ -556,6 +558,58 @@ exports.deleteTrip = async (req, res) => {
   }
 };
 
+// Complete Loading
+exports.completeLoading = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const { tripId } = req.params;
+
+    const trip = await Trip.findOne({
+      _id: tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    if (trip.tripStatus !== "Ready For Loading") {
+      return res.status(400).json({
+        success: false,
+        message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    trip.loading = {
+      loadingStartTime: req.body.loadingStartTime,
+      loadingEndTime: req.body.loadingEndTime,
+      loadedWeight: req.body.loadedWeight,
+      loadedBy: req.body.loadedBy,
+      remarks: req.body.remarks,
+      status: "Completed",
+    };
+
+    trip.tripStatus = "Ready To Start";
+
+    await trip.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Loading completed successfully",
+      data: trip,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Trip Start
 exports.startTrip = async (req, res) => {
   try {
@@ -726,6 +780,7 @@ exports.startTrip = async (req, res) => {
     // Start with first journey leg
     trip.currentLeg = 1;
     trip.journeyLegs[0].status = "In Progress";
+    trip.startOdometer = req.body.startOdometer;
 
     await trip.save();
 
@@ -762,6 +817,352 @@ exports.startTrip = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Trip started successfully",
+      data: trip,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Trip reach destination
+exports.arriveDestination = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const { arrivalOdometer, remarks } = req.body;
+
+    const trip = await Trip.findOne({
+      _id: req.params.tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    if (trip.tripStatus !== "In Transit") {
+      return res.status(400).json({
+        success: false,
+        message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    const currentLegIndex = trip.currentLeg - 1;
+
+    if (!trip.journeyLegs[currentLegIndex]) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid current leg",
+      });
+    }
+
+    if (trip.journeyLegs[currentLegIndex].status !== "In Progress") {
+      return res.status(400).json({
+        success: false,
+        message: "Current leg is not in progress",
+      });
+    }
+
+    trip.arrivalTime = new Date();
+
+    trip.arrivalOdometer = arrivalOdometer;
+
+    trip.tripStatus = "Unloading";
+
+    trip.journeyLegs[currentLegIndex].status = "Arrived";
+
+    if (remarks) {
+      trip.arrivalRemarks = remarks;
+    }
+
+    await trip.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Vehicle arrived at destination",
+      data: trip,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Complete Unloading
+exports.completeUnloading = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { tripId } = req.params;
+
+    const trip = await Trip.findOne({
+      _id: tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    if (trip.tripStatus !== "Unloading") {
+      return res.status(400).json({
+        success: false,
+        message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    const currentLeg = trip.currentLeg;
+
+    const leg = trip.journeyLegs.find((x) => x.legNo === currentLeg);
+
+    if (!leg) {
+      return res.status(404).json({
+        success: false,
+        message: "Journey leg not found",
+      });
+    }
+
+    // Complete current leg
+
+    leg.status = "Completed";
+
+    trip.unloading = {
+      status: "Completed",
+      completedAt: new Date(),
+      odometer: req.body.odometer,
+      unloadingBy: req.body.unloadingBy,
+      receiverName: req.body.receiverName,
+      receiverMobile: req.body.receiverMobile,
+      podNumber: req.body.podNumber,
+      remarks: req.body.remarks,
+    };
+
+    const totalLegs = trip.journeyLegs.length;
+
+    if (currentLeg < totalLegs) {
+      // Move to next leg
+
+      trip.currentLeg = currentLeg + 1;
+
+      trip.tripStatus = "Loading";
+
+      trip.loading = {
+        status: "Pending",
+      };
+    } else {
+      // Final destination reached
+
+      trip.tripStatus = "Completed";
+
+      trip.endTime = new Date();
+    }
+
+    // total fuel quantity
+    const fuelEntries = await Fuel.find({
+      businessId,
+      tripId: trip._id,
+    });
+
+    trip.totalFuelQuantity = fuelEntries.reduce(
+      (sum, fuel) => sum + fuel.quantity,
+      0,
+    );
+
+    trip.totalFuelEntries = fuelEntries.length;
+
+    // totalExpense
+    const expenseEntries = await TripExpense.find({
+      businessId,
+      tripId: trip._id,
+    });
+
+    trip.totalExpense = expenseEntries.reduce(
+      (sum, expense) => sum + expense.amount,
+      0,
+    );
+
+    trip.totalExpenseEntries = expenseEntries.length;
+
+    //profit
+    trip.profit =
+      trip.freightAmount -
+      (trip.driverAdvance +
+        trip.dieselAmount +
+        trip.tollAmount +
+        trip.loadingAmount +
+        trip.unloadingAmount +
+        trip.commissionAmount +
+        trip.miscAmount +
+        trip.totalFuelCost +
+        trip.totalExpense);
+
+    // distanceTravelled
+    trip.distanceTravelled = trip.arrivalOdometer - trip.startOdometer;
+
+    await trip.save();
+
+    res.status(200).json({
+      success: true,
+      message:
+        currentLeg < totalLegs
+          ? "Unloading completed. Ready for next leg."
+          : "Final unloading completed. Trip completed.",
+      data: trip,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.closeTrip = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const trip = await Trip.findOne({
+      _id: req.params.tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    // ============================
+    // Trip must be Completed
+    // ============================
+
+    if (trip.tripStatus !== "Completed") {
+      return res.status(400).json({
+        success: false,
+        message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    // ============================
+    // All Journey Legs Completed
+    // ============================
+
+    const pendingLeg = trip.journeyLegs.find(
+      (leg) => leg.status !== "Completed",
+    );
+
+    if (pendingLeg) {
+      return res.status(400).json({
+        success: false,
+        message: "All journey legs must be completed",
+      });
+    }
+
+    // ============================
+    // Post Trip Inspection
+    // ============================
+
+    const inspection = await PostTripInspection.findOne({
+      tripId: trip._id,
+      businessId,
+    });
+
+    if (!inspection) {
+      return res.status(400).json({
+        success: false,
+        message: "Post Trip Inspection not completed",
+      });
+    }
+
+    // ============================
+    // Close Trip
+    // ============================
+
+    trip.tripStatus = "Closed";
+    trip.closedAt = new Date();
+
+    await trip.save();
+
+    // ============================
+    // Vehicle Available
+    // ============================
+
+    if (trip.fleetSource === "Own Fleet" && trip.vehicleId) {
+      await Vehicle.findByIdAndUpdate(trip.vehicleId, {
+        status: "Available",
+      });
+    }
+
+    // ============================
+    // Vendor Vehicle Available
+    // ============================
+
+    if (trip.fleetSource === "Vendor" && trip.vendorVehicleId) {
+      await VendorVehicle.findByIdAndUpdate(trip.vendorVehicleId, {
+        status: "Available",
+      });
+    }
+
+    // ============================
+    // Driver 1 Available
+    // ============================
+
+    if (trip.driver1) {
+      await Driver.findByIdAndUpdate(trip.driver1, {
+        availableStatus: "Available",
+        currentTripId: null,
+      });
+    }
+
+    // ============================
+    // Driver 2 Available
+    // ============================
+
+    if (trip.driver2) {
+      await Driver.findByIdAndUpdate(trip.driver2, {
+        availableStatus: "Available",
+        currentTripId: null,
+      });
+    }
+
+    // ============================
+    // Customer Dashboard
+    // ============================
+
+    await Customer.findByIdAndUpdate(trip.customerId, {
+      $inc: {
+        totalTrips: 1,
+        totalRevenue: trip.freightAmount || 0,
+      },
+    });
+
+    // ============================
+    // Broker Dashboard
+    // ============================
+
+    if (trip.brokerId) {
+      await Broker.findByIdAndUpdate(trip.brokerId, {
+        $inc: {
+          totalTrips: 1,
+          totalCommission: trip.commissionAmount || 0,
+        },
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Trip closed successfully",
       data: trip,
     });
   } catch (error) {

@@ -371,3 +371,45 @@ exports.getDriverDashboard = async (req, res) => {
     });
   }
 };
+
+
+// get current trips
+exports.getCurrentTrip = async (req, res) => {
+  try {
+    const trip = await Trip.findOne({
+      businessId: req.driver.businessId,
+      $or: [
+        { driver1: req.driver.driverId },
+        { driver2: req.driver.driverId }
+      ],
+      tripStatus: {
+        $in: [
+          "Ready For Loading",
+          "Loading",
+          "Ready To Start",
+          "In Transit",
+          "Unloading"
+        ]
+      }
+    })
+
+    if (!trip) {
+      return res.status(200).json({
+        success: true,
+        message: "No active trip assigned",
+        data: null,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: trip,
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const auth = require("../middleware/auth.middleware");
+const driverAuth = require("../middleware/driverAuth.middleware");
 
 const {
   createTrip,
@@ -8,6 +9,10 @@ const {
   updateTrip,
   deleteTrip,
   startTrip,
+  completeLoading,
+  arriveDestination,
+  completeUnloading,
+  closeTrip,
   getTripDashboard,
 } = require("../controllers/tripController");
 
@@ -23,6 +28,14 @@ router.put("/:id", auth, updateTrip);
 
 router.delete("/:id", auth, deleteTrip);
 
+router.put("/:tripId/loading", auth, completeLoading);
+
 router.put("/:tripId/start", auth, startTrip);
+
+router.put("/:tripId/arrive", auth, arriveDestination);
+
+router.put("/:tripId/unloading", auth, completeUnloading);
+
+router.put("/:tripId/close", auth, closeTrip);
 
 module.exports = router;

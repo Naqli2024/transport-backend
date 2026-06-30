@@ -26,6 +26,10 @@ const driverSchema = new mongoose.Schema(
       required: true,
     },
 
+    otp: String,
+
+    otpExpiry: Date,
+
     aadhaarNo: Number,
 
     experience: {

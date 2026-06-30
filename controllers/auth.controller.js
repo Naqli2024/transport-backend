@@ -72,6 +72,7 @@ exports.login = async (req, res) => {
   }
 };
 
+
 // Get User with Business 
 exports.getUserProfile = async (req, res) => {
   try {

@@ -106,7 +106,7 @@ const tripSchema = new mongoose.Schema(
 
         status: {
           type: String,
-          enum: ["Pending", "In Progress", "Completed"],
+          enum: ["Pending", "In Progress", "Arrived", "Completed"],
           default: "Pending",
         },
       },
@@ -174,16 +174,92 @@ const tripSchema = new mongoose.Schema(
       enum: [
         "Pre Trip Pending",
         "Inspection Pending",
+        "Ready For Loading",
+        "Loading",
         "Ready To Start",
         "In Transit",
+        "Unloading",
         "Completed",
         "Closed",
       ],
       default: "Pre Trip Pending",
     },
     startTime: Date,
-
+    startOdometer: Number,
     endTime: Date,
+    loading: {
+      loadingStartTime: Date,
+      loadingEndTime: Date,
+      loadedWeight: Number,
+      loadedBy: String,
+      remarks: String,
+      status: {
+        type: String,
+        enum: ["Pending", "Loading", "Completed"],
+        default: "Pending",
+      },
+    },
+    unloading: {
+      unloadingStartTime: Date,
+
+      unloadingEndTime: Date,
+
+      unloadedWeight: Number,
+
+      unloadedBy: String,
+
+      podNumber: String,
+
+      remarks: String,
+
+      status: {
+        type: String,
+        enum: ["Pending", "Unloading", "Completed"],
+        default: "Pending",
+      },
+    },
+    arrivalTime: Date,
+
+    arrivalOdometer: Number,
+
+    arrivalRemarks: String,
+    totalFuelCost: {
+      type: Number,
+      default: 0,
+    },
+    totalFuelQuantity: {
+      type: Number,
+      default: 0,
+    },
+
+    totalFuelEntries: {
+      type: Number,
+      default: 0,
+    },
+    totalExpense: {
+      type: Number,
+      default: 0,
+    },
+    totalExpenseEntries: {
+      type: Number,
+      default: 0,
+    },
+
+    profit: {
+      type: Number,
+      default: 0,
+    },
+    distanceTravelled: {
+      type: Number,
+      default: 0,
+    },
+    totalFuelQuantity: {
+      type: Number,
+      default: 0,
+    },
+    completedAt: Date,
+
+    closedAt: Date,
   },
   {
     timestamps: true,
