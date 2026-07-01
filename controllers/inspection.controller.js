@@ -5,7 +5,7 @@ const PostTripInspection = require("../models/PostTripInspection");
 
 exports.createPreTripInspection = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
 
     const { tripId, vehicleId, inspectedBy } = req.body;
 
@@ -173,7 +173,7 @@ exports.getPreTripInspection = async (req, res) => {
 // update pre-trip
 exports.updatePreTripInspection = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
     const { inspectionId } = req.params;
 
     const inspection = await PreTripInspection.findOne({
@@ -247,7 +247,7 @@ exports.updatePreTripInspection = async (req, res) => {
 //=========================================
 exports.postTripInspection = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
 
     const { tripId, inspectedBy } = req.body;
 

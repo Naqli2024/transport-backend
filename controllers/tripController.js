@@ -561,7 +561,7 @@ exports.deleteTrip = async (req, res) => {
 // Complete Loading
 exports.completeLoading = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
 
     const { tripId } = req.params;
 
@@ -613,7 +613,7 @@ exports.completeLoading = async (req, res) => {
 // Trip Start
 exports.startTrip = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
 
     const trip = await Trip.findOne({
       _id: req.params.tripId,
@@ -830,7 +830,7 @@ exports.startTrip = async (req, res) => {
 // Trip reach destination
 exports.arriveDestination = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
 
     const { arrivalOdometer, remarks } = req.body;
 
@@ -899,7 +899,7 @@ exports.arriveDestination = async (req, res) => {
 // Complete Unloading
 exports.completeUnloading = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
     const { tripId } = req.params;
 
     const trip = await Trip.findOne({
