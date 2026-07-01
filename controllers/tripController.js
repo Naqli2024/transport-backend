@@ -558,6 +558,52 @@ exports.deleteTrip = async (req, res) => {
   }
 };
 
+
+// Reached Pickup
+exports.reachedPickup = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { tripId } = req.params;
+
+    const trip = await Trip.findOne({
+      _id: tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    if (trip.tripStatus !== "Ready For Loading") {
+      return res.status(400).json({
+        success: false,
+        message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    trip.tripStatus = "Reached Pickup";
+
+    trip.pickupReachedAt = new Date();
+
+    await trip.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Vehicle reached pickup location",
+      data: trip,
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Complete Loading
 exports.completeLoading = async (req, res) => {
   try {

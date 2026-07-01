@@ -8,6 +8,7 @@ const {
   updateTrip,
   deleteTrip,
   startTrip,
+  reachedPickup,
   completeLoading,
   arriveDestination,
   completeUnloading,
@@ -27,6 +28,8 @@ router.get("/:id", commonAuth, getTrip);
 router.put("/:id", auth, updateTrip);
 
 router.delete("/:id", auth, deleteTrip);
+
+router.put("/:tripId/reached-pickup", driverAuth, reachedPickup);
 
 router.put("/:tripId/loading", driverAuth, completeLoading);
 

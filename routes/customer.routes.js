@@ -3,6 +3,7 @@ const router = express.Router();
 
 const customerController = require("../controllers/customer.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const commonAuth = require("../middleware/commonAuth.middleware");
 
 // ==============================
 // CREATE CUSTOMER
@@ -30,7 +31,7 @@ router.get("/", authMiddleware, customerController.getCustomers);
 // GET SINGLE CUSTOMER
 // ==============================
 
-router.get("/:id", authMiddleware, customerController.getCustomer);
+router.get("/:id", commonAuth, customerController.getCustomer);
 
 // ==============================
 // UPDATE CUSTOMER
