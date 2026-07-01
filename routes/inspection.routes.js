@@ -10,20 +10,23 @@ const {
   postTripInspection,
   getAllPostInspection,
   getPostInspectionById,
+  updatePostTripInspection
 } = require("../controllers/inspection.controller");
 const commonAuth = require("../middleware/commonAuth.middleware");
 
 router.post("/create", driverAuth, createPreTripInspection);
 
-router.get("/", auth, getPreTripInspections);
+router.get("/", commonAuth, getPreTripInspections);
 
 router.put("/:inspectionId", driverAuth, updatePreTripInspection);
 
 router.post("/:tripId/posttripinspection", driverAuth, postTripInspection);
 
-router.get("/posttripinspection", auth, getAllPostInspection);
+router.get("/posttripinspection", commonAuth, getAllPostInspection);
 
 router.get("/posttripinspection/:id", commonAuth, getPostInspectionById);
+
+router.put("/:inspectionId", driverAuth, updatePostTripInspection);
 
 router.get("/:id", commonAuth, getPreTripInspection);
 

@@ -392,3 +392,91 @@ exports.getPostInspectionById = async (req, res) => {
     });
   }
 };
+
+exports.updatePostTripInspection = async (req, res) => {
+  try {
+    const businessId = req.driver.businessId;
+    const { inspectionId } = req.params;
+
+    // Find inspection
+    const inspection = await PostTripInspection.findOne({
+      _id: inspectionId,
+      businessId,
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        success: false,
+        message: "Post trip inspection not found",
+      });
+    }
+
+    // Get trip
+    const trip = await Trip.findOne({
+      _id: inspection.tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    // Only allow update if trip is completed
+    if (trip.tripStatus !== "Completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Trip is not completed yet",
+      });
+    }
+
+    // Merge updates
+    Object.assign(inspection, req.body);
+
+    // Re-check conditions
+    const checks = [
+      inspection.engineOil,
+      inspection.coolant,
+      inspection.brakes,
+      inspection.tyres,
+      inspection.battery,
+      inspection.lights,
+      inspection.horn,
+      inspection.windshield,
+      inspection.documents,
+      !inspection.bodyDamage,
+    ];
+
+    const passed = checks.every((item) => item === true);
+
+    inspection.inspectionStatus = passed ? "Passed" : "Failed";
+
+    await inspection.save();
+
+    // Update vehicle / vendor status again
+    if (trip.fleetSource === "Own Fleet") {
+      await Vehicle.findByIdAndUpdate(trip.vehicleId, {
+        status: passed ? "Available" : "Maintenance",
+      });
+    }
+
+    if (trip.fleetSource === "Vendor") {
+      await VendorVehicle.findByIdAndUpdate(trip.vendorVehicleId, {
+        status: passed ? "Available" : "Maintenance",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Post-trip inspection updated successfully",
+      data: inspection,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
