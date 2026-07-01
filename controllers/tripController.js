@@ -562,7 +562,7 @@ exports.deleteTrip = async (req, res) => {
 // Reached Pickup
 exports.reachedPickup = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
     const { tripId } = req.params;
 
     const trip = await Trip.findOne({
