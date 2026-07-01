@@ -142,6 +142,7 @@ exports.getPreTripInspections = async (req, res) => {
   }
 };
 
+
 // Get One
 exports.getPreTripInspection = async (req, res) => {
   try {
@@ -161,6 +162,78 @@ exports.getPreTripInspection = async (req, res) => {
       success: true,
       data: inspection,
     });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// update pre-trip
+exports.updatePreTripInspection = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { inspectionId } = req.params;
+
+    const inspection = await PreTripInspection.findOne({
+      _id: inspectionId,
+      businessId,
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        success: false,
+        message: "Inspection not found",
+      });
+    }
+
+    const trip = await Trip.findOne({
+      _id: inspection.tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    // Update only the fields sent
+    Object.assign(inspection, req.body);
+
+    const checks = [
+      inspection.engineOil,
+      inspection.coolant,
+      inspection.brakes,
+      inspection.tyres,
+      inspection.lights,
+      inspection.horn,
+      inspection.fuel,
+      inspection.documents,
+      inspection.fireExtinguisher,
+      inspection.firstAidKit,
+    ];
+
+    const passed = checks.every((item) => item === true);
+
+    inspection.inspectionStatus = passed ? "Passed" : "Failed";
+
+    await inspection.save();
+
+    trip.tripStatus = passed
+      ? "Ready For Loading"
+      : "Pre Trip Pending";
+
+    await trip.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Pre-trip inspection updated successfully",
+      data: inspection,
+    });
+
   } catch (error) {
     res.status(500).json({
       success: false,

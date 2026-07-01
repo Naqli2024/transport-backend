@@ -58,6 +58,7 @@ exports.login = async (req, res) => {
       {
         userId: user._id,
         businessId: business._id,
+        role: "Admin",
       },
       process.env.JSON_WEB_TOKEN,
       { expiresIn: "1d" },
