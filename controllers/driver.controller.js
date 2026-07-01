@@ -264,27 +264,27 @@ exports.getDriverDashboard = async (req, res) => {
     const totalDrivers = drivers.length;
 
     const available = drivers.filter(
-      (d) => d.availableStatus === "Available"
+      (d) => d.availableStatus === "Available",
     ).length;
 
     const reserved = drivers.filter(
-      (d) => d.availableStatus === "Reserved"
+      (d) => d.availableStatus === "Reserved",
     ).length;
 
     const onTrip = drivers.filter(
-      (d) => d.availableStatus === "On Trip"
+      (d) => d.availableStatus === "On Trip",
     ).length;
 
     const onLeave = drivers.filter(
-      (d) => d.availableStatus === "On Leave"
+      (d) => d.availableStatus === "On Leave",
     ).length;
 
     const assigned = drivers.filter(
-      (d) => d.vehicle?.status === "Assigned"
+      (d) => d.vehicle?.status === "Assigned",
     ).length;
 
     const unassigned = drivers.filter(
-      (d) => d.vehicle?.status === "Unassigned"
+      (d) => d.vehicle?.status === "Unassigned",
     ).length;
 
     const today = new Date();
@@ -296,9 +296,7 @@ exports.getDriverDashboard = async (req, res) => {
 
       const expiry = new Date(driver.licenseExpiryDate);
 
-      const diffDays = Math.ceil(
-        (expiry - today) / (1000 * 60 * 60 * 24)
-      );
+      const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
 
       if (diffDays >= 0 && diffDays <= 30) {
         licenseExpiring++;
@@ -315,9 +313,7 @@ exports.getDriverDashboard = async (req, res) => {
         $in: ["Ready To Start", "In Transit"],
       },
     })
-      .select(
-        "_id tripNo tripStatus vehicleId driver1 driver2 customerName"
-      )
+      .select("_id tripNo tripStatus vehicleId driver1 driver2 customerName")
       .lean();
 
     // ======================================
@@ -328,7 +324,7 @@ exports.getDriverDashboard = async (req, res) => {
       const currentTrip = activeTrips.find(
         (trip) =>
           trip.driver1?.toString() === driver._id.toString() ||
-          trip.driver2?.toString() === driver._id.toString()
+          trip.driver2?.toString() === driver._id.toString(),
       );
 
       return {
@@ -372,26 +368,24 @@ exports.getDriverDashboard = async (req, res) => {
   }
 };
 
-
 // get current trips
 exports.getCurrentTrip = async (req, res) => {
   try {
     const trip = await Trip.findOne({
       businessId: req.driver.businessId,
-      $or: [
-        { driver1: req.driver.driverId },
-        { driver2: req.driver.driverId }
-      ],
+      $or: [{ driver1: req.driver.driverId }, { driver2: req.driver.driverId }],
       tripStatus: {
         $in: [
+          "Pre Trip Pending",
+          "Inspection Pending",
           "Ready For Loading",
           "Loading",
           "Ready To Start",
           "In Transit",
-          "Unloading"
-        ]
-      }
-    })
+          "Unloading",
+        ],
+      },
+    });
 
     if (!trip) {
       return res.status(200).json({
@@ -405,7 +399,6 @@ exports.getCurrentTrip = async (req, res) => {
       success: true,
       data: trip,
     });
-
   } catch (error) {
     res.status(500).json({
       success: false,

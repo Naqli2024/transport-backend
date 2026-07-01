@@ -43,8 +43,6 @@ exports.sendOtp = async (req, res) => {
     // Send OTP through SMS Provider
     // Twilio / MSG91 / Fast2SMS
 
-    console.log("Driver OTP :", otp);
-
     res.status(200).json({
       success: true,
       message: "OTP sent successfully",
