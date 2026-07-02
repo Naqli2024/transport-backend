@@ -379,6 +379,7 @@ exports.getCurrentTrip = async (req, res) => {
           "Pre Trip Pending",
           "Inspection Pending",
           "Ready For Loading",
+          "Reached Pickup",
           "Loading",
           "Ready To Start",
           "In Transit",
