@@ -623,7 +623,7 @@ exports.completeLoading = async (req, res) => {
       });
     }
 
-    if (trip.tripStatus !== "Ready For Loading") {
+    if (trip.tripStatus !== "Reached Pickup") {
       return res.status(400).json({
         success: false,
         message: `Trip currently ${trip.tripStatus}`,
