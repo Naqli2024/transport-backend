@@ -1013,44 +1013,44 @@ exports.completeUnloading = async (req, res) => {
       trip.endTime = new Date();
     }
 
-    // total fuel quantity
-    const fuelEntries = await Fuel.find({
-      businessId,
-      tripId: trip._id,
-    });
+    // // total fuel quantity
+    // const fuelEntries = await Fuel.find({
+    //   businessId,
+    //   tripId: trip._id,
+    // });
 
-    trip.totalFuelQuantity = fuelEntries.reduce(
-      (sum, fuel) => sum + fuel.quantity,
-      0,
-    );
+    // trip.totalFuelQuantity = fuelEntries.reduce(
+    //   (sum, fuel) => sum + fuel.quantity,
+    //   0,
+    // );
 
-    trip.totalFuelEntries = fuelEntries.length;
+    // trip.totalFuelEntries = fuelEntries.length;
 
-    // totalExpense
-    const expenseEntries = await TripExpense.find({
-      businessId,
-      tripId: trip._id,
-    });
+    // // totalExpense
+    // const expenseEntries = await TripExpense.find({
+    //   businessId,
+    //   tripId: trip._id,
+    // });
 
-    trip.totalExpense = expenseEntries.reduce(
-      (sum, expense) => sum + expense.amount,
-      0,
-    );
+    // trip.totalExpense = expenseEntries.reduce(
+    //   (sum, expense) => sum + expense.amount,
+    //   0,
+    // );
 
-    trip.totalExpenseEntries = expenseEntries.length;
+    // trip.totalExpenseEntries = expenseEntries.length;
 
-    //profit
-    trip.profit =
-      trip.freightAmount -
-      (trip.driverAdvance +
-        trip.dieselAmount +
-        trip.tollAmount +
-        trip.loadingAmount +
-        trip.unloadingAmount +
-        trip.commissionAmount +
-        trip.miscAmount +
-        trip.totalFuelCost +
-        trip.totalExpense);
+    // //profit
+    // trip.profit =
+    //   trip.freightAmount -
+    //   (trip.driverAdvance +
+    //     trip.dieselAmount +
+    //     trip.tollAmount +
+    //     trip.loadingAmount +
+    //     trip.unloadingAmount +
+    //     trip.commissionAmount +
+    //     trip.miscAmount +
+    //     trip.totalFuelCost +
+    //     trip.totalExpense);
 
     // distanceTravelled
     trip.distanceTravelled = trip.arrivalOdometer - trip.startOdometer;
