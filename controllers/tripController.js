@@ -66,53 +66,53 @@ exports.createTrip = async (req, res) => {
       }
     }
 
-    // =========================
-    // CUSTOMER
-    // =========================
+    // // =========================
+    // // CUSTOMER
+    // // =========================
 
-    const customer = await Customer.findOne({
-      _id: req.body.customerId,
-      businessId,
-    });
+    // const customer = await Customer.findOne({
+    //   _id: req.body.customerId,
+    //   businessId,
+    // });
 
-    if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: "Customer not found",
-      });
-    }
+    // if (!customer) {
+    //   return res.status(404).json({
+    //     success: false,
+    //     message: "Customer not found",
+    //   });
+    // }
 
-    if (customer.status !== "Active") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer is inactive",
-      });
-    }
+    // if (customer.status !== "Active") {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Customer is inactive",
+    //   });
+    // }
 
-    // =========================
-    // BROKER
-    // =========================
+    // // =========================
+    // // BROKER
+    // // =========================
 
-    if (req.body.brokerId) {
-      const broker = await Broker.findOne({
-        _id: req.body.brokerId,
-        businessId,
-      });
+    // if (req.body.brokerId) {
+    //   const broker = await Broker.findOne({
+    //     _id: req.body.brokerId,
+    //     businessId,
+    //   });
 
-      if (!broker) {
-        return res.status(404).json({
-          success: false,
-          message: "Broker not found",
-        });
-      }
+    //   if (!broker) {
+    //     return res.status(404).json({
+    //       success: false,
+    //       message: "Broker not found",
+    //     });
+    //   }
 
-      if (broker.status !== "Active") {
-        return res.status(400).json({
-          success: false,
-          message: "Broker is inactive",
-        });
-      }
-    }
+    //   if (broker.status !== "Active") {
+    //     return res.status(400).json({
+    //       success: false,
+    //       message: "Broker is inactive",
+    //     });
+    //   }
+    // }
 
     // =========================
     // ORIGIN
