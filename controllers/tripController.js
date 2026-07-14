@@ -2057,12 +2057,8 @@ exports.createFuelEntry = async (req, res) => {
     } = req.body;
 
     if (
-      !fuelStation ||
-      !fuelType ||
       !quantity ||
-      !rate ||
-      !paymentMode ||
-      !billNo
+      !rate 
     ) {
       return res.status(400).json({
         success: false,
