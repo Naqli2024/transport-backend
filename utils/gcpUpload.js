@@ -1,32 +1,78 @@
-// const { Storage } = require("@google-cloud/storage");
-// const path = require("path");
-// const fs = require("fs");
+const { Storage } = require("@google-cloud/storage");
+const path = require("path");
 
-// console.log("KEY FILE:", process.env.GCP_KEY_FILE);
+const storage = new Storage({
+  projectId: process.env.GCP_PROJECT_ID,
+  // keyFilename: path.join(
+  //   process.cwd(),
+  //   process.env.GCP_KEY_FILE
+  // ),
+  credentials: JSON.parse(process.env.GCP_SERVICE_ACCOUNT),
+});
 
-// console.log(
-//   "EXISTS:",
-//   fs.existsSync(process.env.GCP_KEY_FILE)
-// );
+const bucket = storage.bucket(process.env.GCP_BUCKET_NAME);
 
-// const storage = new Storage({
-//   projectId: process.env.GCP_PROJECT_ID,
-//    keyFilename: path.join(
-//     process.cwd(),
-//     process.env.GCP_KEY_FILE
-//   ),
-// });
+exports.uploadFile = async (file, businessId, folder) => {
 
-// const bucket = storage.bucket(process.env.GCP_BUCKET_NAME);
+  const fileName = `businesses/${businessId}/${folder}/${Date.now()}-${file.originalname}`;
 
-// exports.uploadFile = async (file, businessId) => {
-//   const fileName = `businesses/${businessId}/fuel-bills/${Date.now()}-${file.originalname}`;
+  const blob = bucket.file(fileName);
 
-//   const blob = bucket.file(fileName);
+  await blob.save(file.buffer, {
+    contentType: file.mimetype,
+    resumable: false,
+  });
 
-//   await blob.save(file.buffer, {
-//     contentType: file.mimetype,
-//   });
+  // Return GCS object path
+  return fileName;
+};
 
-//   return `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-// };
+// Generate temporary URL
+exports.getSignedUrl = async (filePath) => {
+
+  const file = bucket.file(filePath);
+
+  const [url] = await file.getSignedUrl({
+    version: "v4",
+    action: "read",
+    expires: Date.now() + 1000 * 60 * 60, // 1 hour
+  });
+
+  return url;
+};
+
+exports.deleteFile = async (filePath) => {
+  try {
+    const file = bucket.file(filePath);
+
+    const [exists] = await file.exists();
+
+    if (exists) {
+      await file.delete();
+    }
+  } catch (error) {
+    console.error("GCS Delete Error:", error.message);
+  }
+};
+
+exports.replaceFile = async (
+  newFile,
+  businessId,
+  folder,
+  oldFilePath
+) => {
+
+  // Upload new file
+  const newFilePath = await exports.uploadFile(
+    newFile,
+    businessId,
+    folder
+  );
+
+  // Delete old file
+  if (oldFilePath) {
+    await exports.deleteFile(oldFilePath);
+  }
+
+  return newFilePath;
+};

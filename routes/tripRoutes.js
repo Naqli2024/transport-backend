@@ -12,10 +12,52 @@ const {
   completeLoading,
   arriveDestination,
   completeUnloading,
+  verifyDeliveryOtp,
+  resendDeliveryOtp,
   closeTrip,
   getTripDashboard,
+  uploadTripDocument,
+  bulkUploadTripDocuments,
+  getTripDocuments,
+  updateTripDocument,
+  deleteTripDocument,
+  completeWeighbridge,
+  getWeighbridge,
+  updateWeighbridge,
+  createFuelEntry,
+  getTripFuelEntries,
+  getFuelEntry,
+  updateFuelEntry,
+  uploadPod
 } = require("../controllers/tripController");
 const commonAuth = require("../middleware/commonAuth.middleware");
+const multer = require("multer");
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB
+  },
+  fileFilter: (req, file, cb) => {
+
+    const allowed = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/jpg",
+    ];
+
+    if (!allowed.includes(file.mimetype)) {
+      return cb(
+        new Error(
+          "Only PDF, JPG and PNG files are allowed."
+        )
+      );
+    }
+
+    cb(null, true);
+  },
+});
 
 router.get("/dashboard", auth, getTripDashboard);
 
@@ -39,6 +81,110 @@ router.put("/:tripId/arrive", driverAuth, arriveDestination);
 
 router.put("/:tripId/unloading", driverAuth, completeUnloading);
 
+router.post(
+    "/:tripId/verify-delivery-otp",
+    driverAuth,
+    verifyDeliveryOtp
+);
+
+router.post(
+  "/:tripId/resend-delivery-otp",
+  driverAuth,
+  resendDeliveryOtp
+);
+
 router.put("/:tripId/close", auth, closeTrip);
+
+router.post(
+  "/:tripId/documents",
+  auth,
+  upload.single("file"),
+  uploadTripDocument,
+);
+
+router.post(
+  "/:tripId/documents/bulk-upload",
+  auth,
+  upload.fields([
+    { name: "ewayBill", maxCount: 1 },
+    { name: "invoice", maxCount: 1 },
+    { name: "lr", maxCount: 1 },
+    { name: "deliveryChallan", maxCount: 1 },
+  ]),
+  bulkUploadTripDocuments
+);
+
+router.get("/:tripId/documents", auth, getTripDocuments);
+
+router.put(
+  "/documents/:documentId",
+  auth,
+  upload.single("file"),
+  updateTripDocument,
+);
+
+router.delete("/documents/:documentId", auth, deleteTripDocument);
+
+router.post(
+  "/:tripId/weighbridge",
+  driverAuth,
+  upload.single("receipt"),
+  completeWeighbridge,
+);
+
+router.get("/:tripId/weighbridge", commonAuth, getWeighbridge);
+
+router.put(
+  "/:tripId/weighbridge",
+  driverAuth,
+  upload.single("receipt"),
+  updateWeighbridge,
+);
+
+router.post(
+    "/trips/:tripId/fuel",
+    driverAuth,
+    upload.single("bill"),
+    createFuelEntry
+);
+
+router.get(
+    "/trips/:tripId/fuel",
+    commonAuth,
+    getTripFuelEntries
+);
+
+router.get(
+    "/fuel/:fuelId",
+    commonAuth,
+    getFuelEntry
+);
+
+router.put(
+    "/fuel/:fuelId",
+    driverAuth,
+    upload.single("bill"),
+    updateFuelEntry
+);
+
+router.post(
+  "/:tripId/pod",
+  driverAuth,
+  upload.fields([
+    {
+      name: "pod",
+      maxCount: 1,
+    },
+    {
+      name: "invoice",
+      maxCount: 1,
+    },
+    {
+      name: "deliveryChallan",
+      maxCount: 1,
+    },
+  ]),
+  uploadPod
+);
 
 module.exports = router;

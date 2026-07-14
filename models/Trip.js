@@ -61,7 +61,7 @@ const tripSchema = new mongoose.Schema(
 
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Customer"
+      ref: "Customer",
     },
 
     brokerId: {
@@ -176,9 +176,12 @@ const tripSchema = new mongoose.Schema(
         "Ready For Loading",
         "Reached Pickup",
         "Loading",
+        "Documents Pending",
         "Ready To Start",
         "In Transit",
         "Unloading",
+        "Delivery OTP Pending",
+        "POD Pending",
         "Completed",
         "Closed",
       ],
@@ -219,11 +222,88 @@ const tripSchema = new mongoose.Schema(
         default: "Pending",
       },
     },
+    deliveryOtp: {
+      type: String,
+    },
+
+    deliveryOtpExpiry: {
+      type: Date,
+    },
+
+    deliveryOtpVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    pod: {
+      status: {
+        type: String,
+        enum: ["Pending", "Uploaded"],
+        default: "Pending",
+      },
+
+      podPath: String,
+
+      invoicePath: String,
+
+      deliveryChallanPath: String,
+
+      uploadedAt: Date,
+
+      uploadedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Driver",
+      },
+
+      remarks: String,
+    },
     arrivalTime: Date,
 
     arrivalOdometer: Number,
 
     arrivalRemarks: String,
+
+    weighbridge: {
+      status: {
+        type: String,
+        enum: ["Pending", "Completed"],
+        default: "Pending",
+      },
+
+      grossWeight: {
+        type: Number,
+      },
+
+      ticketNumber: {
+        type: String,
+      },
+
+      weighbridgeName: {
+        type: String,
+      },
+
+      weighbridgeFee: {
+        type: Number,
+      },
+
+      receiptPath: {
+        type: String,
+      },
+
+      remarks: {
+        type: String,
+      },
+
+      measuredAt: {
+        type: Date,
+      },
+
+      measuredBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Driver",
+      },
+    },
+
     totalFuelCost: {
       type: Number,
       default: 0,

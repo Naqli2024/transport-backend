@@ -49,7 +49,7 @@ const fuelEntrySchema = new mongoose.Schema(
 
     billNo: String,
 
-    billImage: String,
+    billPath: String,
 
     remarks: String,
   },
