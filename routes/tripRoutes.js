@@ -142,14 +142,14 @@ router.put(
 );
 
 router.post(
-    "/trips/:tripId/fuel",
+    "/:tripId/fuel",
     driverAuth,
     upload.single("bill"),
     createFuelEntry
 );
 
 router.get(
-    "/trips/:tripId/fuel",
+    "/:tripId/fuel",
     commonAuth,
     getTripFuelEntries
 );

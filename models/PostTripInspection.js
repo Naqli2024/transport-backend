@@ -40,8 +40,6 @@ const postTripInspectionSchema = new mongoose.Schema(
 
     brakes: Boolean,
 
-    tyres: Boolean,
-
     battery: Boolean,
 
     lights: Boolean,
@@ -57,6 +55,29 @@ const postTripInspectionSchema = new mongoose.Schema(
     remarks: String,
 
     photos: [String],
+
+    tyres: [
+      {
+        position: String,
+
+        treadDepthMM: Number,
+
+        treadLossMM: Number,
+
+        airPressureOK: Boolean,
+
+        sideWallDamage: Boolean,
+
+        puncture: Boolean,
+
+        unevenWear: Boolean,
+
+        condition: {
+          type: String,
+          enum: ["Excellent", "Good", "Average", "Poor"],
+        },
+      },
+    ],
 
     inspectionStatus: {
       type: String,

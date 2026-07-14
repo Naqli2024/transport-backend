@@ -28,7 +28,6 @@ const preTripInspectionSchema = new mongoose.Schema(
     engineOil: Boolean,
     coolant: Boolean,
     brakes: Boolean,
-    tyres: Boolean,
     lights: Boolean,
     horn: Boolean,
     fuel: Boolean,
@@ -37,6 +36,41 @@ const preTripInspectionSchema = new mongoose.Schema(
     firstAidKit: Boolean,
 
     remarks: String,
+
+    tyres: [
+      {
+        position: {
+          type: String,
+          enum: [
+            "FL", // Front Left
+            "FR", // Front Right
+
+            "RL1",
+            "RL2",
+            "RR1",
+            "RR2",
+
+            "TL1",
+            "TL2",
+            "TR1",
+            "TR2",
+          ],
+        },
+
+        treadDepthMM: Number,
+
+        airPressureOK: Boolean,
+
+        sideWallDamage: Boolean,
+
+        puncture: Boolean,
+
+        condition: {
+          type: String,
+          enum: ["Excellent", "Good", "Average", "Poor"],
+        },
+      },
+    ],
 
     inspectionStatus: {
       type: String,

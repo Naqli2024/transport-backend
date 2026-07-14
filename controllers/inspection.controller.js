@@ -3,6 +3,23 @@ const Vehicle = require("../models/Vehicle");
 const PreTripInspection = require("../models/PreTripInspection");
 const PostTripInspection = require("../models/PostTripInspection");
 
+// validation
+const validateTyres = (tyres = []) => {
+  if (!Array.isArray(tyres) || tyres.length === 0) {
+    return false;
+  }
+
+  return tyres.every((tyre) => {
+    return (
+      tyre.airPressureOK === true &&
+      tyre.sideWallDamage === false &&
+      tyre.puncture === false &&
+      tyre.condition !== "Poor"
+    );
+  });
+};
+
+
 exports.createPreTripInspection = async (req, res) => {
   try {
     const businessId = req.driver.businessId;
@@ -79,7 +96,9 @@ exports.createPreTripInspection = async (req, res) => {
       req.body.engineOil,
       req.body.coolant,
       req.body.brakes,
-      req.body.tyres,
+      
+      validateTyres(req.body.tyres),
+
       req.body.lights,
       req.body.horn,
       req.body.fuel,
@@ -207,7 +226,7 @@ exports.updatePreTripInspection = async (req, res) => {
       inspection.engineOil,
       inspection.coolant,
       inspection.brakes,
-      inspection.tyres,
+      validateTyres(inspection.tyres),
       inspection.lights,
       inspection.horn,
       inspection.fuel,
@@ -293,7 +312,7 @@ exports.postTripInspection = async (req, res) => {
       req.body.engineOil,
       req.body.coolant,
       req.body.brakes,
-      req.body.tyres,
+      validateTyres(req.body.tyres),
       req.body.battery,
       req.body.lights,
       req.body.horn,
@@ -440,7 +459,7 @@ exports.updatePostTripInspection = async (req, res) => {
       inspection.engineOil,
       inspection.coolant,
       inspection.brakes,
-      inspection.tyres,
+      validateTyres(inspection.tyres),
       inspection.battery,
       inspection.lights,
       inspection.horn,
