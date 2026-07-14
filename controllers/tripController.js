@@ -2089,12 +2089,12 @@ exports.createFuelEntry = async (req, res) => {
       });
     }
 
-    if (trip.tripStatus !== "In Transit") {
-      return res.status(400).json({
-        success: false,
-        message: "Fuel entry allowed only during transit",
-      });
-    }
+    // if (trip.tripStatus !== "In Transit") {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Fuel entry allowed only during transit",
+    //   });
+    // }
 
     if (
       trip.driver1?.toString() !== driverId &&
