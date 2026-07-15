@@ -45,6 +45,8 @@ const tripSchema = new mongoose.Schema(
 
     weight: Number,
 
+    uom: String,
+
     freightAmount: Number,
 
     advanceAmount: Number,
@@ -273,6 +275,8 @@ const tripSchema = new mongoose.Schema(
       grossWeight: {
         type: Number,
       },
+
+      uom : String,
 
       ticketNumber: {
         type: String,

@@ -1814,6 +1814,7 @@ exports.completeWeighbridge = async (req, res) => {
 
     const {
       grossWeight,
+      uom,
       ticketNumber,
       weighbridgeName,
       weighbridgeFee,
@@ -1822,13 +1823,13 @@ exports.completeWeighbridge = async (req, res) => {
 
     // Required field validation
 
-    if (!grossWeight || !ticketNumber || !weighbridgeName || !weighbridgeFee) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Gross weight, ticket number, weighbridge name and weighbridge fee are required",
-      });
-    }
+    // if (!grossWeight || !ticketNumber || !weighbridgeName || !weighbridgeFee) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message:
+    //       "Gross weight, ticket number, weighbridge name and weighbridge fee are required",
+    //   });
+    // }
 
     const trip = await Trip.findOne({
       _id: tripId,
@@ -1886,6 +1887,7 @@ exports.completeWeighbridge = async (req, res) => {
     trip.weighbridge = {
       status: "Completed",
       grossWeight,
+      uom,
       ticketNumber,
       weighbridgeName,
       weighbridgeFee,
