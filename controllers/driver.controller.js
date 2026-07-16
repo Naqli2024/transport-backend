@@ -385,7 +385,8 @@ exports.getCurrentTrip = async (req, res) => {
           "Ready To Start",
           "In Transit",
           "Unloading",
-          "Delivery OTP Pending"
+          "Delivery OTP Pending",
+          "Completed"
         ],
       },
     });

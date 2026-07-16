@@ -183,7 +183,6 @@ const tripSchema = new mongoose.Schema(
         "In Transit",
         "Unloading",
         "Delivery OTP Pending",
-        "POD Pending",
         "Completed",
         "Closed",
       ],

@@ -1155,7 +1155,7 @@ exports.verifyDeliveryOtp = async (req, res) => {
       trip.podNumber = `POD-${year}-${String(count + 1).padStart(6, "0")}`;
     }
 
-    trip.tripStatus = "POD Pending";
+    trip.tripStatus = "Completed";
 
     await trip.save();
 
