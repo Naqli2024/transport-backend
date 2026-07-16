@@ -379,11 +379,13 @@ exports.getCurrentTrip = async (req, res) => {
           "Pre Trip Pending",
           "Inspection Pending",
           "Ready For Loading",
+          "Documents Pending",
           "Reached Pickup",
           "Loading",
           "Ready To Start",
           "In Transit",
           "Unloading",
+          "Delivery OTP Pending"
         ],
       },
     });
