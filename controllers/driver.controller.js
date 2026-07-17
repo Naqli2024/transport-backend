@@ -372,7 +372,7 @@ exports.getDriverDashboard = async (req, res) => {
 // Individual driver dashboard
 exports.getIndividualDriverDashboard = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver.businessId;
     const { driverId } = req.params;
 
     // Driver
