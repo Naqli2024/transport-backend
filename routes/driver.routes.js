@@ -12,6 +12,7 @@ const {
   updateDriver,
   deleteDriver,
   getDriverDashboard,
+  getIndividualDriverDashboard,
   getCurrentTrip,
 } = require("../controllers/driver.controller");
 
@@ -20,6 +21,12 @@ router.post("/add-driver", auth, createDriver);
 router.get("/", auth, getDrivers);
 
 router.get("/dashboard", auth, getDriverDashboard);
+
+router.get(
+  "/:driverId/dashboard",
+  driverAuth,
+  getIndividualDriverDashboard
+);
 
 // Driver mobile APIs
 router.get("/current-trip", driverAuth, getCurrentTrip);

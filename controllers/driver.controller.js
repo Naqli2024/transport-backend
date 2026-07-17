@@ -1,6 +1,7 @@
 const Driver = require("../models/Driver");
 const Vehicle = require("../models/Vehicle");
 const Trip = require("../models/Trip");
+const FuelEntry = require("../models/FuelEntry");
 
 /* =================================
    CREATE DRIVER
@@ -362,6 +363,153 @@ exports.getDriverDashboard = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Individual driver dashboard
+exports.getIndividualDriverDashboard = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { driverId } = req.params;
+
+    // Driver
+    const driver = await Driver.findOne({
+      _id: driverId,
+      businessId,
+    }).populate("vehicle.vehicleId");
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    // All trips
+    const trips = await Trip.find({
+      businessId,
+      $or: [
+        { driver1: driverId },
+        { driver2: driverId },
+      ],
+    }).sort({
+      createdAt: -1,
+    });
+
+    // Current Trip
+    const currentTrip = trips.find((trip) =>
+      [
+        "Pre Trip Pending",
+        "Inspection Pending",
+        "Ready For Loading",
+        "Documents Pending",
+        "Reached Pickup",
+        "Loading",
+        "Ready To Start",
+        "In Transit",
+        "Unloading",
+        "Delivery OTP Pending",
+        "POD Pending",
+      ].includes(trip.tripStatus)
+    );
+
+    // Summary
+    const completedTrips = trips.filter(
+      (trip) => trip.tripStatus === "Completed"
+    );
+
+    const runningTrips = trips.filter((trip) =>
+      [
+        "Pre Trip Pending",
+        "Inspection Pending",
+        "Ready For Loading",
+        "Documents Pending",
+        "Reached Pickup",
+        "Loading",
+        "Ready To Start",
+        "In Transit",
+        "Unloading",
+        "Delivery OTP Pending",
+        "POD Pending",
+      ].includes(trip.tripStatus)
+    );
+
+    const cancelledTrips = trips.filter(
+      (trip) => trip.tripStatus === "Cancelled"
+    );
+
+    const totalDistance = completedTrips.reduce(
+      (sum, trip) => sum + (trip.distanceTravelled || 0),
+      0
+    );
+
+    // Fuel
+    const fuelEntries = await FuelEntry.find({
+      businessId,
+      driverId,
+    });
+
+    const totalFuel = fuelEntries.reduce(
+      (sum, fuel) => sum + (fuel.quantity || 0),
+      0
+    );
+
+    // Trip History
+    const tripHistory = trips.map((trip) => ({
+      tripId: trip._id,
+      tripNo: trip.tripNo,
+      customerName: trip.customerName,
+      tripStatus: trip.tripStatus,
+      startTime: trip.startTime,
+      endTime: trip.endTime,
+      distanceTravelled: trip.distanceTravelled || 0,
+      freightAmount: trip.freightAmount || 0,
+      totalFuelQuantity: trip.totalFuelQuantity || 0,
+    }));
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        summary: {
+          driverName: driver.name,
+          driverCode: driver.driverCode,
+          mobile: driver.mobile,
+          availableStatus: driver.availableStatus,
+
+          vehicle: driver.vehicle,
+
+          totalTrips: trips.length,
+
+          completedTrips: completedTrips.length,
+
+          runningTrips: runningTrips.length,
+
+          cancelledTrips: cancelledTrips.length,
+
+          totalDistance,
+
+          totalFuel,
+
+          fuelEntries: fuelEntries.length,
+
+          revenue: 0,
+
+          joiningDate: driver.createdAt,
+
+          licenseExpiryDate: driver.licenseExpiryDate,
+        },
+
+        currentTrip,
+
+        tripHistory,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
