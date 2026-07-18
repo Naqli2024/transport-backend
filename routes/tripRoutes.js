@@ -114,7 +114,7 @@ router.post(
   bulkUploadTripDocuments
 );
 
-router.get("/:tripId/documents", auth, getTripDocuments);
+router.get("/:tripId/documents", commonAuth, getTripDocuments);
 
 router.put(
   "/documents/:documentId",
