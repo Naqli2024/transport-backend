@@ -237,7 +237,7 @@ const tripSchema = new mongoose.Schema(
         type: Number,
       },
 
-      uom : String,
+      uom: String,
 
       ticketNumber: {
         type: String,
@@ -267,6 +267,14 @@ const tripSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "Driver",
       },
+    },
+
+    tripExpense: {
+      expenseType: {
+        type: String,
+        enum: ["Loading", "Unloading", "Parking", "Repair", "Miscellaneous"],
+      },
+      amount: String,
     },
 
     totalFuelCost: {

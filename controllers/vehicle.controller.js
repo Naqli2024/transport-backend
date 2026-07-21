@@ -6,6 +6,7 @@ const VehicleDocument = require("../models/VehicleDocument");
 const {
   uploadFile,
   deleteFile,
+  getSignedUrl
 } = require("../utils/gcpUpload");
 
 // ==============================
@@ -1067,9 +1068,24 @@ exports.getVehicleDocuments = async (req, res) => {
       createdAt: -1,
     });
 
+    const response = await Promise.all(
+      documents.map(async (doc) => {
+        let fileUrl = null;
+
+        if (doc.filePath) {
+          fileUrl = await getSignedUrl(doc.filePath);
+        }
+
+        return {
+          ...doc.toObject(),
+          fileUrl,
+        };
+      })
+    );
+
     return res.status(200).json({
       success: true,
-      data: documents,
+      data: response,
     });
   } catch (error) {
     return res.status(500).json({
