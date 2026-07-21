@@ -3,11 +3,17 @@ const path = require("path");
 
 const storage = new Storage({
   projectId: process.env.GCP_PROJECT_ID,
-  // keyFilename: path.join(
-  //   process.cwd(),
-  //   process.env.GCP_KEY_FILE
-  // ),
-  credentials: JSON.parse(process.env.GCP_SERVICE_ACCOUNT),
+
+  ...(process.env.GCP_SERVICE_ACCOUNT
+    ? {
+        credentials: JSON.parse(process.env.GCP_SERVICE_ACCOUNT),
+      }
+    : {
+        keyFilename: path.join(
+          process.cwd(),
+          process.env.GCP_KEY_FILE
+        ),
+      }),
 });
 
 const bucket = storage.bucket(process.env.GCP_BUCKET_NAME);

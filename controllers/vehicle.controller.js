@@ -2,6 +2,11 @@
 
 const Vehicle = require("../models/Vehicle");
 const getDocumentStatus = require("../utils/getDocumentStatus");
+const VehicleDocument = require("../models/VehicleDocument");
+const {
+  uploadFile,
+  deleteFile,
+} = require("../utils/gcpUpload");
 
 // ==============================
 // CREATE VEHICLE
@@ -943,6 +948,226 @@ exports.getTicketLogs = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+/* ================================================
+    Vehicle documents
+=================================================*/
+exports.bulkUploadVehicleDocuments = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const uploadedBy = req.user.userId;
+    const { vehicleId } = req.params;
+
+    // Validate Vehicle
+    const vehicle = await Vehicle.findOne({
+      _id: vehicleId,
+      businessId,
+    });
+
+    if (!vehicle) {
+      return res.status(404).json({
+        success: false,
+        message: "Vehicle not found",
+      });
+    }
+
+    if (!req.files || Object.keys(req.files).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload at least one document.",
+      });
+    }
+
+    // Map FormData field -> documentType
+    const documentMap = {
+      rcBook: "RC_BOOK",
+      insurance: "INSURANCE",
+      fitnessCertificate: "FITNESS_CERTIFICATE",
+      roadTax: "ROAD_TAX",
+      permit: "PERMIT",
+      pollution: "POLLUTION",
+      fastag: "FASTAG",
+      nationalPermit: "NATIONAL_PERMIT",
+      statePermit: "STATE_PERMIT",
+      other: "OTHER",
+    };
+
+    const uploadedDocuments = [];
+
+    // Loop through every uploaded field
+    for (const fieldName of Object.keys(req.files)) {
+      const files = req.files[fieldName];
+
+      const documentType = documentMap[fieldName];
+
+      if (!documentType) continue;
+
+      for (const file of files) {
+
+        // Only OTHER can have multiple files
+        if (documentType !== "OTHER") {
+          const existing = await VehicleDocument.findOne({
+            businessId,
+            vehicleId,
+            documentType,
+          });
+
+          if (existing) {
+            continue;
+          }
+        }
+
+        const filePath = await uploadFile(
+          file,
+          businessId,
+          `vehicles/${vehicleId}/documents`
+        );
+
+        const document = await VehicleDocument.create({
+          businessId,
+          vehicleId,
+          documentType,
+          uploadedBy,
+          filePath,
+        });
+
+        uploadedDocuments.push(document);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Vehicle documents uploaded successfully.",
+      totalUploaded: uploadedDocuments.length,
+      data: uploadedDocuments,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getVehicleDocuments = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { vehicleId } = req.params;
+
+    const documents = await VehicleDocument.find({
+      businessId,
+      vehicleId,
+    }).sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: documents,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updateVehicleDocument = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const uploadedBy = req.user.userId;
+
+    const { documentId } = req.params;
+
+    const document = await VehicleDocument.findOne({
+      _id: documentId,
+      businessId,
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: "Vehicle document not found",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Document file is required",
+      });
+    }
+
+    // Keep old file
+    const oldFilePath = document.filePath;
+
+    // Upload new file
+    const newFilePath = await uploadFile(
+      req.file,
+      businessId,
+      `vehicles/${document.vehicleId}/documents`
+    );
+
+    // Update MongoDB
+    document.filePath = newFilePath;
+    document.uploadedBy = uploadedBy;
+
+    await document.save();
+
+    // Delete old file from GCS
+    if (oldFilePath) {
+      await deleteFile(oldFilePath);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${document.documentType} updated successfully`,
+      data: document,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.deleteVehicleDocument = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { documentId } = req.params;
+
+    const document = await VehicleDocument.findOne({
+      _id: documentId,
+      businessId,
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: "Document not found",
+      });
+    }
+
+    if (document.filePath) {
+      await deleteFile(document.filePath);
+    }
+
+    await document.deleteOne();
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle document deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
       success: false,
       message: error.message,
     });

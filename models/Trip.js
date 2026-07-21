@@ -73,18 +73,10 @@ const tripSchema = new mongoose.Schema(
 
     origin: {
       location: String,
-      city: String,
-      state: String,
-      latitude: Number,
-      longitude: Number,
     },
 
     destination: {
       location: String,
-      city: String,
-      state: String,
-      latitude: Number,
-      longitude: Number,
     },
 
     journeyLegs: [
@@ -136,36 +128,6 @@ const tripSchema = new mongoose.Schema(
     cleanerPhone: String,
 
     driverAdvance: {
-      type: Number,
-      default: 0,
-    },
-
-    dieselAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    tollAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    loadingAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    unloadingAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    commissionAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    miscAmount: {
       type: Number,
       default: 0,
     },
