@@ -2590,7 +2590,7 @@ exports.createTripExpense = async (req, res) => {
       driverId,
       expenseType,
       amount,
-      billImage: billPath,
+      filePath: billPath,
     });
 
     return res.status(201).json({
@@ -2622,8 +2622,8 @@ exports.getTripExpenses = async (req, res) => {
       expenses.map(async (expense) => {
         const obj = expense.toObject();
 
-        obj.billUrl = obj.billImage
-          ? await getSignedUrl(obj.billImage)
+        obj.billUrl = obj.filePath
+          ? await getSignedUrl(obj.filePath)
           : null;
 
         return obj;
@@ -2634,14 +2634,11 @@ exports.getTripExpenses = async (req, res) => {
       success: true,
       data,
     });
-
   } catch (error) {
-
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
 
@@ -2667,7 +2664,7 @@ exports.updateTripExpense = async (req, res) => {
     }
 
     if (req.file) {
-      const oldBill = expense.billImage;
+      const oldBill = expense.filePath;
 
       const newBill = await uploadFile(
         req.file,
@@ -2675,7 +2672,7 @@ exports.updateTripExpense = async (req, res) => {
         `trip-expenses/${expense.tripId}/${expense.expenseType.toLowerCase()}`
       );
 
-      expense.billImage = newBill;
+      expense.filePath = newBill;
 
       if (oldBill) {
         await deleteFile(oldBill);
@@ -2714,8 +2711,8 @@ exports.deleteTripExpense = async (req, res) => {
       });
     }
 
-    if (expense.billImage) {
-      await deleteFile(expense.billImage);
+    if (expense.filePath) {
+      await deleteFile(expense.filePath);
     }
 
     await TripExpense.findByIdAndDelete(expenseId);

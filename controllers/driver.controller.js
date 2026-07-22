@@ -2,6 +2,13 @@ const Driver = require("../models/Driver");
 const Vehicle = require("../models/Vehicle");
 const Trip = require("../models/Trip");
 const FuelEntry = require("../models/FuelEntry");
+const TripExpense = require("../models/TripExpense");
+const {
+  uploadFile,
+  getSignedUrl,
+  deleteFile,
+  replaceFile,
+} = require("../utils/gcpUpload");
 
 /* =================================
    CREATE DRIVER
@@ -391,10 +398,7 @@ exports.getIndividualDriverDashboard = async (req, res) => {
     // All trips
     const trips = await Trip.find({
       businessId,
-      $or: [
-        { driver1: driverId },
-        { driver2: driverId },
-      ],
+      $or: [{ driver1: driverId }, { driver2: driverId }],
     }).sort({
       createdAt: -1,
     });
@@ -413,12 +417,12 @@ exports.getIndividualDriverDashboard = async (req, res) => {
         "Unloading",
         "Delivery OTP Pending",
         "POD Pending",
-      ].includes(trip.tripStatus)
+      ].includes(trip.tripStatus),
     );
 
     // Summary
     const completedTrips = trips.filter(
-      (trip) => trip.tripStatus === "Completed"
+      (trip) => trip.tripStatus === "Completed",
     );
 
     const runningTrips = trips.filter((trip) =>
@@ -434,16 +438,16 @@ exports.getIndividualDriverDashboard = async (req, res) => {
         "Unloading",
         "Delivery OTP Pending",
         "POD Pending",
-      ].includes(trip.tripStatus)
+      ].includes(trip.tripStatus),
     );
 
     const cancelledTrips = trips.filter(
-      (trip) => trip.tripStatus === "Cancelled"
+      (trip) => trip.tripStatus === "Cancelled",
     );
 
     const totalDistance = completedTrips.reduce(
       (sum, trip) => sum + (trip.distanceTravelled || 0),
-      0
+      0,
     );
 
     // Fuel
@@ -454,7 +458,7 @@ exports.getIndividualDriverDashboard = async (req, res) => {
 
     const totalFuel = fuelEntries.reduce(
       (sum, fuel) => sum + (fuel.quantity || 0),
-      0
+      0,
     );
 
     // Trip History
@@ -534,7 +538,7 @@ exports.getCurrentTrip = async (req, res) => {
           "In Transit",
           "Unloading",
           "Delivery OTP Pending",
-          "Completed"
+          "Completed",
         ],
       },
     });
@@ -547,9 +551,52 @@ exports.getCurrentTrip = async (req, res) => {
       });
     }
 
+    const fileUrl = trip.weighbridge?.receiptPath
+      ? await getSignedUrl(trip.weighbridge.receiptPath)
+      : null;
+
+    // Get Loading & Unloading Expenses
+    const expenses = await TripExpense.find({
+      businessId: req.driver.businessId,
+      tripId: trip._id,
+      expenseType: {
+        $in: ["Loading", "Unloading"],
+      },
+    }).lean();
+
+    const loadingExpense = expenses.find((x) => x.expenseType === "Loading");
+
+    const unloadingExpense = expenses.find(
+      (x) => x.expenseType === "Unloading",
+    );
+
+    trip.loadingExpense = loadingExpense
+      ? {
+          ...loadingExpense,
+          fileUrl: loadingExpense.billImage
+            ? await getSignedUrl(loadingExpense.billImage)
+            : null,
+        }
+      : null;
+
+    trip.unloadingExpense = unloadingExpense
+      ? {
+          ...unloadingExpense,
+          fileUrl: unloadingExpense.billImage
+            ? await getSignedUrl(unloadingExpense.billImage)
+            : null,
+        }
+      : null;
+
     res.status(200).json({
       success: true,
-      data: trip,
+      data: {
+        ...trip.toObject(),
+        weighbridge: {
+          ...(trip.weighbridge.toObject?.() || trip.weighbridge),
+          fileUrl,
+        },
+      },
     });
   } catch (error) {
     res.status(500).json({
