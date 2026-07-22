@@ -28,7 +28,11 @@ const {
   getTripFuelEntries,
   getFuelEntry,
   updateFuelEntry,
-  uploadPod
+  uploadPod,
+  createTripExpense,
+  deleteTripExpense,
+  getTripExpenses,
+  updateTripExpense
 } = require("../controllers/tripController");
 const commonAuth = require("../middleware/commonAuth.middleware");
 const multer = require("multer");
@@ -185,6 +189,32 @@ router.post(
     },
   ]),
   uploadPod
+);
+
+router.post(
+  "/:tripId/expenses",
+  driverAuth,
+  upload.single("bill"),
+  createTripExpense
+);
+
+router.get(
+  "/:tripId/expenses",
+  commonAuth,
+  getTripExpenses
+);
+
+router.put(
+  "/expenses/:expenseId",
+  driverAuth,
+  upload.single("bill"),
+  updateTripExpense
+);
+
+router.delete(
+  "/expenses/:expenseId",
+  driverAuth,
+  deleteTripExpense
 );
 
 module.exports = router;

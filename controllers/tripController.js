@@ -8,6 +8,7 @@ const Broker = require("../models/Broker");
 const PreTripInspection = require("../models/PreTripInspection");
 const PostTripInspection = require("../models/PostTripInspection");
 const Fuel = require("../models/Fuel");
+const TripExpense = require("../models/TripExpense");
 const {
   uploadFile,
   getSignedUrl,
@@ -2493,6 +2494,235 @@ exports.uploadPod = async (req, res) => {
       success: true,
       message: "POD uploaded successfully",
       data: pod,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+/* =========================================
+  Trip Expense
+==========================================*/
+exports.createTripExpense = async (req, res) => {
+  try {
+    const { businessId, driverId } = req.driver;
+    const { tripId } = req.params;
+
+    const {
+      expenseType,
+      amount,
+    } = req.body;
+
+    // Validate Trip
+    const trip = await Trip.findOne({
+      _id: tripId,
+      businessId,
+    });
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    // Validate Expense Type
+    const allowedExpenseTypes = [
+      "Loading",
+      "Unloading",
+      "Parking",
+      "Repair",
+      "Miscellaneous",
+    ];
+
+    if (!allowedExpenseTypes.includes(expenseType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid expense type",
+      });
+    }
+
+    if (!amount) {
+      return res.status(400).json({
+        success: false,
+        message: "Expense amount is required",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Expense bill is required",
+      });
+    }
+
+    // Allow only one Loading & Unloading expense
+    if (["Loading", "Unloading"].includes(expenseType)) {
+      const existingExpense = await TripExpense.findOne({
+        businessId,
+        tripId,
+        expenseType,
+      });
+
+      if (existingExpense) {
+        return res.status(400).json({
+          success: false,
+          message: `${expenseType} expense already uploaded`,
+        });
+      }
+    }
+
+    // Upload Bill
+    const billPath = await uploadFile(
+      req.file,
+      businessId,
+      `trip-expenses/${tripId}/${expenseType.toLowerCase()}`
+    );
+
+    // Create Expense
+    const expense = await TripExpense.create({
+      businessId,
+      tripId,
+      driverId,
+      expenseType,
+      amount,
+      billImage: billPath,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `${expenseType} expense uploaded successfully`,
+      data: expense,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getTripExpenses = async (req, res) => {
+  try {
+    const { businessId } = req.driver;
+    const { tripId } = req.params;
+
+    const expenses = await TripExpense.find({
+      businessId,
+      tripId,
+    }).sort({
+      createdAt: -1,
+    });
+
+    const data = await Promise.all(
+      expenses.map(async (expense) => {
+        const obj = expense.toObject();
+
+        obj.billUrl = obj.billImage
+          ? await getSignedUrl(obj.billImage)
+          : null;
+
+        return obj;
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};
+
+exports.updateTripExpense = async (req, res) => {
+  try {
+    const { businessId } = req.driver;
+    const { expenseId } = req.params;
+
+    const expense = await TripExpense.findOne({
+      _id: expenseId,
+      businessId,
+    });
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: "Expense not found",
+      });
+    }
+
+    if (req.body.amount) {
+      expense.amount = req.body.amount;
+    }
+
+    if (req.file) {
+      const oldBill = expense.billImage;
+
+      const newBill = await uploadFile(
+        req.file,
+        businessId,
+        `trip-expenses/${expense.tripId}/${expense.expenseType.toLowerCase()}`
+      );
+
+      expense.billImage = newBill;
+
+      if (oldBill) {
+        await deleteFile(oldBill);
+      }
+    }
+
+    await expense.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Expense updated successfully",
+      data: expense,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.deleteTripExpense = async (req, res) => {
+  try {
+    const { businessId } = req.driver;
+    const { expenseId } = req.params;
+
+    const expense = await TripExpense.findOne({
+      _id: expenseId,
+      businessId,
+    });
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: "Expense not found",
+      });
+    }
+
+    if (expense.billImage) {
+      await deleteFile(expense.billImage);
+    }
+
+    await TripExpense.findByIdAndDelete(expenseId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Expense deleted successfully",
     });
   } catch (error) {
     return res.status(500).json({
