@@ -2608,7 +2608,8 @@ exports.createTripExpense = async (req, res) => {
 
 exports.getTripExpenses = async (req, res) => {
   try {
-    const { businessId } = req.driver;
+    const businessId =
+      req.user?.businessId || req.driver?.businessId;
     const { tripId } = req.params;
 
     const expenses = await TripExpense.find({
