@@ -221,6 +221,57 @@ exports.updateDriver = async (req, res) => {
   }
 };
 
+exports.updateDriverLocation = async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    const { lat, lng } = req.body;
+
+    if (lat === undefined || lng === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and Longitude are required",
+      });
+    }
+
+    const driver = await Driver.findByIdAndUpdate(
+      driverId,
+      {
+        lat: Number(lat),
+        lng: Number(lng),
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Driver location updated successfully",
+      data: {
+        _id: driver._id,
+        driverId: driver.driverId,
+        name: driver.name,
+        lat: driver.lat,
+        lng: driver.lng,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
 /* =================================
    DELETE DRIVER
 ================================= */

@@ -89,6 +89,8 @@ const driverSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    lat: Number,
+    lng: Number
   },
   { timestamps: true },
 );

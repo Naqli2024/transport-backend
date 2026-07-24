@@ -10,6 +10,7 @@ const {
   getDriver,
   getDriverInfoByDriverId,
   updateDriver,
+  updateDriverLocation,
   deleteDriver,
   getDriverDashboard,
   getIndividualDriverDashboard,
@@ -34,6 +35,8 @@ router.get("/current-trip", driverAuth, getCurrentTrip);
 router.get("/:driverId", commonAuth, getDriver);
 
 router.put("/:driverId", auth, updateDriver);
+
+router.patch("/:driverId/location", driverAuth, updateDriverLocation);
 
 router.delete("/:driverId", auth, deleteDriver);
 
