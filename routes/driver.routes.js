@@ -15,6 +15,8 @@ const {
   getDriverDashboard,
   getIndividualDriverDashboard,
   getCurrentTrip,
+  getDriverSettlement,
+  settleDriverTrips
 } = require("../controllers/driver.controller");
 
 router.post("/add-driver", auth, createDriver);
@@ -39,5 +41,17 @@ router.put("/:driverId", auth, updateDriver);
 router.patch("/:driverId/location", driverAuth, updateDriverLocation);
 
 router.delete("/:driverId", auth, deleteDriver);
+
+router.get(
+  "/:driverId/settlement/get",
+  auth,
+  getDriverSettlement
+);
+
+router.put(
+  "/:driverId/settle",
+  auth,
+  settleDriverTrips
+);
 
 module.exports = router;

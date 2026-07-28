@@ -1145,7 +1145,7 @@ exports.verifyDeliveryOtp = async (req, res) => {
     trip.deliveryOtp = null;
     trip.deliveryOtpExpiry = null;
 
-     // Generate POD Number only once
+    // Generate POD Number only once
     if (!trip.podNumber) {
       const count = await Trip.countDocuments({
         businessId,
@@ -1204,15 +1204,11 @@ exports.resendDeliveryOtp = async (req, res) => {
 
     // Generate New OTP
 
-    const otp = Math.floor(
-      100000 + Math.random() * 900000
-    ).toString();
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     trip.deliveryOtp = otp;
 
-    trip.deliveryOtpExpiry = new Date(
-      Date.now() + 5 * 60 * 1000
-    );
+    trip.deliveryOtpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
     trip.deliveryOtpVerified = false;
 
@@ -1611,7 +1607,7 @@ exports.bulkUploadTripDocuments = async (req, res) => {
       const newFilePath = await uploadFile(
         file,
         businessId,
-        `trip-documents/${tripId}`
+        `trip-documents/${tripId}`,
       );
 
       if (existingDocument) {
@@ -1645,7 +1641,6 @@ exports.bulkUploadTripDocuments = async (req, res) => {
       totalDocuments: uploadedDocuments.length,
       data: uploadedDocuments,
     });
-
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -2059,10 +2054,7 @@ exports.createFuelEntry = async (req, res) => {
       remarks,
     } = req.body;
 
-    if (
-      !quantity ||
-      !rate 
-    ) {
+    if (!quantity || !rate) {
       return res.status(400).json({
         success: false,
         message: "Please fill all required fields",
@@ -2350,7 +2342,6 @@ exports.updateFuelEntry = async (req, res) => {
   }
 };
 
-
 /* =========================================
    POD
 ==========================================*/
@@ -2360,12 +2351,7 @@ exports.uploadPod = async (req, res) => {
     const { businessId, driverId } = req.driver;
     const { tripId } = req.params;
 
-    const {
-      receiverName,
-      receiverMobile,
-      podNumber,
-      remarks,
-    } = req.body;
+    const { receiverName, receiverMobile, podNumber, remarks } = req.body;
 
     const trip = await Trip.findOne({
       _id: tripId,
@@ -2400,22 +2386,14 @@ exports.uploadPod = async (req, res) => {
 
     // Required fields
 
-    if (
-      !receiverName ||
-      !receiverMobile ||
-      !podNumber
-    ) {
+    if (!receiverName || !receiverMobile || !podNumber) {
       return res.status(400).json({
         success: false,
-        message:
-          "Receiver name, receiver mobile and POD number are required",
+        message: "Receiver name, receiver mobile and POD number are required",
       });
     }
 
-    if (
-      !req.files ||
-      !req.files.pod
-    ) {
+    if (!req.files || !req.files.pod) {
       return res.status(400).json({
         success: false,
         message: "Signed POD document is required",
@@ -2441,7 +2419,7 @@ exports.uploadPod = async (req, res) => {
     const podPath = await uploadFile(
       req.files.pod[0],
       businessId,
-      `trip-documents/${tripId}/pod`
+      `trip-documents/${tripId}/pod`,
     );
 
     // Invoice (Optional)
@@ -2452,7 +2430,7 @@ exports.uploadPod = async (req, res) => {
       invoicePath = await uploadFile(
         req.files.invoice[0],
         businessId,
-        `trip-documents/${tripId}/pod`
+        `trip-documents/${tripId}/pod`,
       );
     }
 
@@ -2464,7 +2442,7 @@ exports.uploadPod = async (req, res) => {
       deliveryChallanPath = await uploadFile(
         req.files.deliveryChallan[0],
         businessId,
-        `trip-documents/${tripId}/pod`
+        `trip-documents/${tripId}/pod`,
       );
     }
 
@@ -2503,7 +2481,6 @@ exports.uploadPod = async (req, res) => {
   }
 };
 
-
 /* =========================================
   Trip Expense
 ==========================================*/
@@ -2512,10 +2489,7 @@ exports.createTripExpense = async (req, res) => {
     const { businessId, driverId } = req.driver;
     const { tripId } = req.params;
 
-    const {
-      expenseType,
-      amount,
-    } = req.body;
+    const { expenseType, amount } = req.body;
 
     // Validate Trip
     const trip = await Trip.findOne({
@@ -2580,7 +2554,7 @@ exports.createTripExpense = async (req, res) => {
     const billPath = await uploadFile(
       req.file,
       businessId,
-      `trip-expenses/${tripId}/${expenseType.toLowerCase()}`
+      `trip-expenses/${tripId}/${expenseType.toLowerCase()}`,
     );
 
     // Create Expense
@@ -2608,8 +2582,7 @@ exports.createTripExpense = async (req, res) => {
 
 exports.getTripExpenses = async (req, res) => {
   try {
-    const businessId =
-      req.user?.businessId || req.driver?.businessId;
+    const businessId = req.user?.businessId || req.driver?.businessId;
     const { tripId } = req.params;
 
     const expenses = await TripExpense.find({
@@ -2623,12 +2596,10 @@ exports.getTripExpenses = async (req, res) => {
       expenses.map(async (expense) => {
         const obj = expense.toObject();
 
-        obj.billUrl = obj.filePath
-          ? await getSignedUrl(obj.filePath)
-          : null;
+        obj.billUrl = obj.filePath ? await getSignedUrl(obj.filePath) : null;
 
         return obj;
-      })
+      }),
     );
 
     return res.status(200).json({
@@ -2670,7 +2641,7 @@ exports.updateTripExpense = async (req, res) => {
       const newBill = await uploadFile(
         req.file,
         businessId,
-        `trip-expenses/${expense.tripId}/${expense.expenseType.toLowerCase()}`
+        `trip-expenses/${expense.tripId}/${expense.expenseType.toLowerCase()}`,
       );
 
       expense.filePath = newBill;
@@ -2721,6 +2692,681 @@ exports.deleteTripExpense = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Expense deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/*=========================================
+    Ledger
+==========================================*/
+// single trip ledger
+exports.getTripLedger = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { tripId } = req.params;
+
+    const trip = await Trip.findOne({
+      _id: tripId,
+      businessId,
+    })
+      .populate("vehicleId", "regNo")
+      .populate("driver1", "driverName");
+    console.log("trips:", trip);
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    //--------------------------------------------------
+    // Fuel summary
+    //--------------------------------------------------
+    const fuelCost = Number(trip.totalFuelCost || 0);
+
+    const fuelQuantity = Number(trip.totalFuelQuantity || 0);
+
+    const totalFuelEntries = Number(trip.totalFuelEntries || 0);
+
+    //--------------------------------------------------
+    // Trip Expenses
+    //--------------------------------------------------
+
+    const expenses = await TripExpense.find({
+      businessId,
+      tripId,
+    });
+
+    const getExpense = (type) =>
+      expenses
+        .filter((x) => x.expenseType === type)
+        .reduce((sum, x) => sum + Number(x.amount || 0), 0);
+
+    const loadingExpense = getExpense("Loading");
+
+    const unloadingExpense = getExpense("Unloading");
+
+    const parkingExpense = getExpense("Parking");
+
+    const repairExpense = getExpense("Repair");
+
+    const miscellaneousExpense = getExpense("Miscellaneous");
+
+    //--------------------------------------------------
+    // Weighbridge
+    //--------------------------------------------------
+
+    const weighbridgeExpense = Number(trip.weighbridge?.weighbridgeFee || 0);
+
+    //--------------------------------------------------
+    // Total Expense
+    //--------------------------------------------------
+
+    const totalExpense =
+      fuelCost +
+      loadingExpense +
+      unloadingExpense +
+      parkingExpense +
+      repairExpense +
+      miscellaneousExpense +
+      weighbridgeExpense;
+
+    //--------------------------------------------------
+    // Profit
+    //--------------------------------------------------
+
+    const freightAmount = Number(trip.freightAmount || 0);
+
+    const profit = freightAmount - totalExpense;
+
+    //--------------------------------------------------
+    // Driver Settlement
+    //--------------------------------------------------
+
+    const advance = Number(trip.driverAdvance || 0);
+
+    let officeShouldPayDriver = 0;
+    let driverShouldReturn = 0;
+
+    if (totalExpense > advance) {
+      officeShouldPayDriver = totalExpense - advance;
+    } else {
+      driverShouldReturn = advance - totalExpense;
+    }
+
+    //--------------------------------------------------
+    const round = (value) => Number(value.toFixed(2));
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        trip: {
+          tripId: trip._id,
+          tripNo: trip.tripNo,
+          tripStatus: trip.tripStatus,
+          vehicle: trip.vehicleId,
+          driver: trip.driver1,
+        },
+
+        income: {
+          freightAmount: round(freightAmount),
+        },
+
+        expenses: {
+          driverAdvance: round(advance),
+          fuelCost: round(fuelCost),
+          fuelQuantity,
+          totalFuelEntries,
+          loadingExpense: round(loadingExpense),
+          unloadingExpense: round(unloadingExpense),
+          parkingExpense: round(parkingExpense),
+          repairExpense: round(repairExpense),
+          miscellaneousExpense: round(miscellaneousExpense),
+          weighbridgeExpense: round(weighbridgeExpense),
+        },
+
+        summary: {
+          totalExpense: round(totalExpense),
+          profit: round(profit),
+        },
+
+        driverSettlement: {
+          advanceGiven: round(advance),
+          actualExpense: round(totalExpense),
+          officeShouldPayDriver: round(officeShouldPayDriver),
+          driverShouldReturn: round(driverShouldReturn),
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// All over trips dashboard
+exports.getLedgerDashboard = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const trips = await Trip.find({
+      businessId,
+    }).lean();
+
+    const tripIds = trips.map((t) => t._id);
+
+    const expenses = await TripExpense.find({
+      businessId,
+      tripId: { $in: tripIds },
+    }).lean();
+
+    let freight = 0;
+
+    let driverAdvance = 0;
+
+    let fuel = 0;
+
+    let loading = 0;
+
+    let unloading = 0;
+
+    let parking = 0;
+
+    let repair = 0;
+
+    let miscellaneous = 0;
+
+    let weighbridge = 0;
+
+    let officeShouldPay = 0;
+
+    let driverShouldReturn = 0;
+
+    trips.forEach((trip) => {
+      freight += Number(trip.freightAmount || 0);
+
+      driverAdvance += Number(trip.driverAdvance || 0);
+
+      fuel += Number(trip.totalFuelCost || 0);
+
+      weighbridge += Number(trip.weighbridge?.weighbridgeFee || 0);
+    });
+
+    expenses.forEach((expense) => {
+      switch (expense.expenseType) {
+        case "Loading":
+          loading += Number(expense.amount || 0);
+          break;
+
+        case "Unloading":
+          unloading += Number(expense.amount || 0);
+          break;
+
+        case "Parking":
+          parking += Number(expense.amount || 0);
+          break;
+
+        case "Repair":
+          repair += Number(expense.amount || 0);
+          break;
+
+        case "Miscellaneous":
+          miscellaneous += Number(expense.amount || 0);
+          break;
+      }
+    });
+
+    const totalExpense =
+      fuel +
+      loading +
+      unloading +
+      parking +
+      repair +
+      miscellaneous +
+      weighbridge;
+
+    const profit = freight - totalExpense;
+
+    trips.forEach((trip) => {
+      const loadingExpense = expenses
+        .filter(
+          (e) =>
+            e.tripId.toString() === trip._id.toString() &&
+            e.expenseType === "Loading",
+        )
+        .reduce((a, b) => a + Number(b.amount), 0);
+
+      const unloadingExpense = expenses
+        .filter(
+          (e) =>
+            e.tripId.toString() === trip._id.toString() &&
+            e.expenseType === "Unloading",
+        )
+        .reduce((a, b) => a + Number(b.amount), 0);
+
+      const parkingExpense = expenses
+        .filter(
+          (e) =>
+            e.tripId.toString() === trip._id.toString() &&
+            e.expenseType === "Parking",
+        )
+        .reduce((a, b) => a + Number(b.amount), 0);
+
+      const repairExpense = expenses
+        .filter(
+          (e) =>
+            e.tripId.toString() === trip._id.toString() &&
+            e.expenseType === "Repair",
+        )
+        .reduce((a, b) => a + Number(b.amount), 0);
+
+      const miscExpense = expenses
+        .filter(
+          (e) =>
+            e.tripId.toString() === trip._id.toString() &&
+            e.expenseType === "Miscellaneous",
+        )
+        .reduce((a, b) => a + Number(b.amount), 0);
+
+      const actualExpense =
+        fuel +
+        loadingExpense +
+        unloadingExpense +
+        parkingExpense +
+        repairExpense +
+        miscExpense +
+        Number(trip.weighbridge?.weighbridgeFee || 0);
+
+      if (actualExpense > trip.driverAdvance) {
+        officeShouldPay += actualExpense - trip.driverAdvance;
+      } else {
+        driverShouldReturn += trip.driverAdvance - actualExpense;
+      }
+    });
+
+    const round = (value) => Number(value.toFixed(2));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        income: {
+          freight: round(freight),
+        },
+        expenses: {
+          driverAdvance: round(driverAdvance),
+          fuel: round(fuel),
+          loading: round(loading),
+          unloading: round(unloading),
+          parking: round(parking),
+          repair: round(repair),
+          miscellaneous: round(miscellaneous),
+          weighbridge: round(weighbridge),
+        },
+        summary: {
+          totalTrips: trips.length,
+          completedTrips: trips.filter((t) => t.tripStatus === "Completed")
+            .length,
+          runningTrips: trips.filter((t) => t.tripStatus !== "Completed")
+            .length,
+          totalExpense: round(totalExpense),
+          profit: round(profit),
+        },
+        driverSettlement: {
+          officeShouldPay: round(officeShouldPay),
+          driverShouldReturn: round(driverShouldReturn),
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+// customer ledger
+exports.getCustomerLedger = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const trips = await Trip.find({
+      businessId,
+      "journeyLegs.customerId": { $exists: true, $ne: null },
+    })
+      .populate(
+        "journeyLegs.customerId",
+        "customerName companyName"
+      )
+      .lean();
+
+    const ledger = {};
+
+    trips.forEach((trip) => {
+      trip.journeyLegs.forEach((leg) => {
+        if (!leg.customerId) return;
+
+        const customer = leg.customerId;
+
+        const customerId = customer._id.toString();
+
+        if (!ledger[customerId]) {
+          ledger[customerId] = {
+            customerId,
+            customerName:
+              customer.companyName ||
+              customer.customerName,
+
+            totalTrips: 0,
+
+            freightAmount: 0,
+
+            receivedAmount: 0,
+
+            balance: 0,
+          };
+        }
+
+        ledger[customerId].totalTrips += 1;
+
+        // Assumption:
+        // One customer per trip.
+        // If one trip has multiple customers,
+        // later we'll allocate freight per leg.
+        ledger[customerId].freightAmount += Number(
+          trip.freightAmount || 0
+        );
+
+        ledger[customerId].balance =
+          ledger[customerId].freightAmount -
+          ledger[customerId].receivedAmount;
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: Object.values(ledger),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getCustomerLedgerById = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { customerId } = req.params;
+
+    const customer = await Customer.findById(customerId).select(
+      "customerName companyName"
+    );
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: "Customer not found",
+      });
+    }
+
+    const trips = await Trip.find({
+      businessId,
+      "journeyLegs.customerId": customerId,
+    })
+      .populate("vehicleId", "regNo")
+      .populate("driver1", "driverName")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const data = trips.map((trip) => {
+      const freight = Number(trip.freightAmount || 0);
+      const received = 0;
+
+      return {
+        tripId: trip._id,
+
+        tripNo: trip.tripNo,
+
+        lrNo: trip.lrNo,
+
+        tripDate: trip.createdAt,
+
+        vehicleNo: trip.vehicleId?.regNo || "-",
+
+        driverName: trip.driver1?.driverName || "-",
+
+        origin: trip.origin?.location || "-",
+
+        destination: trip.destination?.location || "-",
+
+        tripStatus: trip.tripStatus,
+
+        freightAmount: freight,
+
+        receivedAmount: received,
+
+        balance: freight - received,
+
+        paymentStatus:
+          received >= freight ? "Paid" : "Pending",
+      };
+    });
+
+    const totalFreight = data.reduce(
+      (sum, trip) => sum + trip.freightAmount,
+      0
+    );
+
+    const totalReceived = data.reduce(
+      (sum, trip) => sum + trip.receivedAmount,
+      0
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        customer: {
+          customerId,
+          customerName:
+            customer.companyName || customer.customerName,
+        },
+
+        summary: {
+          totalTrips: data.length,
+
+          freightAmount: totalFreight,
+
+          receivedAmount: totalReceived,
+
+          balance: totalFreight - totalReceived,
+        },
+
+        trips: data,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// broker ledger
+exports.getBrokerLedger = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const trips = await Trip.find({
+      businessId,
+      "journeyLegs.brokerId": { $exists: true, $ne: null },
+    })
+      .populate("journeyLegs.brokerId", "brokerName companyName")
+      .lean();
+
+    const ledger = {};
+
+    trips.forEach((trip) => {
+      const processedBrokers = new Set();
+
+      trip.journeyLegs.forEach((leg) => {
+        if (!leg.brokerId) return;
+
+        const broker = leg.brokerId;
+        const brokerId = broker._id.toString();
+
+        // Prevent duplicate counting if the same broker appears
+        // in multiple legs of the same trip.
+        if (processedBrokers.has(brokerId)) return;
+
+        processedBrokers.add(brokerId);
+
+        if (!ledger[brokerId]) {
+          ledger[brokerId] = {
+            brokerId,
+            brokerName:
+              broker.companyName || broker.brokerName,
+
+            totalTrips: 0,
+
+            payableAmount: 0,
+
+            paidAmount: 0,
+
+            balance: 0,
+          };
+        }
+
+        ledger[brokerId].totalTrips += 1;
+
+        // Until broker payment module is ready
+        ledger[brokerId].payableAmount += Number(
+          trip.freightAmount || 0
+        );
+
+        ledger[brokerId].balance =
+          ledger[brokerId].payableAmount -
+          ledger[brokerId].paidAmount;
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: Object.values(ledger),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getBrokerLedgerById = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { brokerId } = req.params;
+
+    const broker = await Broker.findById(brokerId)
+      .select("brokerName companyName");
+
+    if (!broker) {
+      return res.status(404).json({
+        success: false,
+        message: "Broker not found",
+      });
+    }
+
+    const trips = await Trip.find({
+      businessId,
+      "journeyLegs.brokerId": brokerId,
+    })
+      .populate("vehicleId", "regNo")
+      .populate("driver1", "driverName")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const data = trips.map((trip) => {
+      const payable = Number(trip.freightAmount || 0);
+      const paid = 0;
+
+      return {
+        tripId: trip._id,
+
+        tripNo: trip.tripNo,
+
+        lrNo: trip.lrNo,
+
+        tripDate: trip.createdAt,
+
+        vehicleNo:
+          trip.vehicleId?.regNo || "-",
+
+        driverName:
+          trip.driver1?.driverName || "-",
+
+        origin:
+          trip.origin?.location || "-",
+
+        destination:
+          trip.destination?.location || "-",
+
+        tripStatus: trip.tripStatus,
+
+        payableAmount: payable,
+
+        paidAmount: paid,
+
+        balance: payable - paid,
+
+        paymentStatus:
+          paid >= payable ? "Paid" : "Pending",
+      };
+    });
+
+    const totalPayable = data.reduce(
+      (sum, trip) => sum + trip.payableAmount,
+      0
+    );
+
+    const totalPaid = data.reduce(
+      (sum, trip) => sum + trip.paidAmount,
+      0
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        broker: {
+          brokerId,
+
+          brokerName:
+            broker.companyName || broker.brokerName,
+        },
+
+        summary: {
+          totalTrips: data.length,
+
+          payableAmount: totalPayable,
+
+          paidAmount: totalPaid,
+
+          balance: totalPayable - totalPaid,
+        },
+
+        trips: data,
+      },
     });
   } catch (error) {
     return res.status(500).json({

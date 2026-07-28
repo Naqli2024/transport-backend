@@ -656,3 +656,227 @@ exports.getCurrentTrip = async (req, res) => {
     });
   }
 };
+
+exports.getDriverSettlement = async (req, res) => {
+  try {
+
+    const businessId = req.user.businessId;
+
+    const { driverId } = req.params;
+
+    const driver = await Driver.findById(driverId)
+      .select("driverName mobile");
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    const trips = await Trip.find({
+      businessId,
+      driver1: driverId,
+      tripStatus: "Completed",
+      "settlement.status": "Pending",
+    })
+      .populate("vehicleId", "regNo")
+      .sort({ completedAt: -1 });
+
+    const tripIds = trips.map(t => t._id);
+
+    // calculate round
+      const round = (value) => Number(value.toFixed(2));
+
+    const expenses = await TripExpense.find({
+      businessId,
+      tripId: { $in: tripIds },
+    });
+
+    let totalAdvance = 0;
+
+    let totalExpense = 0;
+
+    let officeShouldPay = 0;
+
+    let driverShouldReturn = 0;
+
+    const tripData = [];
+
+    for (const trip of trips) {
+
+      const tripExpenses = expenses.filter(
+        e => e.tripId.toString() === trip._id.toString()
+      );
+
+      const loading = tripExpenses
+        .filter(e => e.expenseType === "Loading")
+        .reduce((a, b) => a + b.amount, 0);
+
+      const unloading = tripExpenses
+        .filter(e => e.expenseType === "Unloading")
+        .reduce((a, b) => a + b.amount, 0);
+
+      const parking = tripExpenses
+        .filter(e => e.expenseType === "Parking")
+        .reduce((a, b) => a + b.amount, 0);
+
+      const repair = tripExpenses
+        .filter(e => e.expenseType === "Repair")
+        .reduce((a, b) => a + b.amount, 0);
+
+      const misc = tripExpenses
+        .filter(e => e.expenseType === "Miscellaneous")
+        .reduce((a, b) => a + b.amount, 0);
+
+      const fuel = round(trip.totalFuelCost || 0);
+
+      const weighbridge =
+        trip.weighbridge?.weighbridgeFee || 0;
+
+      const actualExpense = round(
+        fuel +
+        loading +
+        unloading +
+        parking +
+        repair +
+        misc +
+        weighbridge);
+
+      const advance =
+        trip.driverAdvance || 0;
+
+      let officePay = 0;
+
+      let driverReturn = 0;
+
+      if (actualExpense > advance) {
+
+        officePay =
+          actualExpense - advance;
+
+        officeShouldPay += officePay;
+
+      } else {
+
+        driverReturn =
+          advance - actualExpense;
+
+        driverShouldReturn += driverReturn;
+      }
+
+      totalAdvance += advance;
+
+      totalExpense += actualExpense;
+
+      tripData.push({
+
+        tripId: trip._id,
+
+        tripNo: trip.tripNo,
+
+        vehicleNo:
+          trip.vehicleId?.regNo || "-",
+
+        freightAmount:
+          trip.freightAmount || 0,
+
+        advance,
+
+        fuel,
+
+        loading,
+
+        unloading,
+
+        parking,
+
+        repair,
+
+        miscellaneous: misc,
+
+        weighbridge,
+
+        actualExpense,
+
+        officePay: round(officePay),
+
+        driverReturn: round(driverReturn),
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+
+        driver: {
+          _id: driver._id,
+          driverName: driver.driverName,
+          mobile: driver.mobile,
+        },
+
+        summary: {
+
+          totalTrips: trips.length,
+
+          totalAdvance,
+
+          totalExpense: round(totalExpense),
+
+          officeShouldPay: round(officeShouldPay),
+
+          driverShouldReturn: round(driverShouldReturn),
+        },
+
+        trips: tripData,
+      },
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};
+
+exports.settleDriverTrips = async (req, res) => {
+  try {
+
+    const businessId = req.user.businessId;
+
+    const { tripIds, remarks } = req.body;
+
+    await Trip.updateMany(
+      {
+        businessId,
+        _id: { $in: tripIds },
+      },
+      {
+        $set: {
+          settlement: {
+            status: "Settled",
+            settledAt: new Date(),
+            remarks,
+          },
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Driver settlement completed",
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};

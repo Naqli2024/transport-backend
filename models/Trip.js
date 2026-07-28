@@ -314,6 +314,15 @@ const tripSchema = new mongoose.Schema(
     completedAt: Date,
 
     closedAt: Date,
+    settlement: {
+      status: {
+        type: String,
+        enum: ["Pending", "Settled"],
+        default: "Pending",
+      },
+      settledAt: Date,
+      remarks: String,
+    },
   },
   {
     timestamps: true,

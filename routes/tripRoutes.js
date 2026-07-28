@@ -32,7 +32,13 @@ const {
   createTripExpense,
   deleteTripExpense,
   getTripExpenses,
-  updateTripExpense
+  updateTripExpense,
+  getTripLedger,
+  getLedgerDashboard,
+  getCustomerLedger,
+  getCustomerLedgerById,
+  getBrokerLedger,
+  getBrokerLedgerById
 } = require("../controllers/tripController");
 const commonAuth = require("../middleware/commonAuth.middleware");
 const multer = require("multer");
@@ -64,6 +70,20 @@ const upload = multer({
 });
 
 router.get("/dashboard", auth, getTripDashboard);
+
+router.get(
+  "/ledger-dashboard",
+  auth,
+  getLedgerDashboard
+);
+
+router.get(
+  "/customers/ledger",
+  auth,
+  getCustomerLedger
+);
+
+router.get("/vendors/ledger", auth, getBrokerLedger);
 
 router.post("/create", auth, createTrip);
 
@@ -216,5 +236,19 @@ router.delete(
   driverAuth,
   deleteTripExpense
 );
+
+router.get(
+  "/:tripId/ledger",
+  auth,
+  getTripLedger
+);
+
+router.get(
+  "/customers/:customerId",
+  auth,
+  getCustomerLedgerById
+);
+
+router.get("/vendors/:vendorId", auth, getBrokerLedgerById);
 
 module.exports = router;
