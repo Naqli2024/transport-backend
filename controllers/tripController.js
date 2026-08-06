@@ -1290,6 +1290,18 @@ exports.closeTrip = async (req, res) => {
     }
 
     // ============================
+    // Driver Settlement
+    // ============================
+
+    if (!trip.settlement || trip.settlement.status !== "Settled") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Driver settlement is pending. Please settle the trip before closing.",
+      });
+    }
+
+    // ============================
     // Close Trip
     // ============================
 
@@ -3043,10 +3055,7 @@ exports.getCustomerLedger = async (req, res) => {
       businessId,
       "journeyLegs.customerId": { $exists: true, $ne: null },
     })
-      .populate(
-        "journeyLegs.customerId",
-        "customerName companyName"
-      )
+      .populate("journeyLegs.customerId", "customerName companyName")
       .lean();
 
     const ledger = {};
@@ -3062,9 +3071,7 @@ exports.getCustomerLedger = async (req, res) => {
         if (!ledger[customerId]) {
           ledger[customerId] = {
             customerId,
-            customerName:
-              customer.companyName ||
-              customer.customerName,
+            customerName: customer.companyName || customer.customerName,
 
             totalTrips: 0,
 
@@ -3082,13 +3089,10 @@ exports.getCustomerLedger = async (req, res) => {
         // One customer per trip.
         // If one trip has multiple customers,
         // later we'll allocate freight per leg.
-        ledger[customerId].freightAmount += Number(
-          trip.freightAmount || 0
-        );
+        ledger[customerId].freightAmount += Number(trip.freightAmount || 0);
 
         ledger[customerId].balance =
-          ledger[customerId].freightAmount -
-          ledger[customerId].receivedAmount;
+          ledger[customerId].freightAmount - ledger[customerId].receivedAmount;
       });
     });
 
@@ -3110,7 +3114,7 @@ exports.getCustomerLedgerById = async (req, res) => {
     const { customerId } = req.params;
 
     const customer = await Customer.findById(customerId).select(
-      "customerName companyName"
+      "customerName companyName",
     );
 
     if (!customer) {
@@ -3158,19 +3162,18 @@ exports.getCustomerLedgerById = async (req, res) => {
 
         balance: freight - received,
 
-        paymentStatus:
-          received >= freight ? "Paid" : "Pending",
+        paymentStatus: received >= freight ? "Paid" : "Pending",
       };
     });
 
     const totalFreight = data.reduce(
       (sum, trip) => sum + trip.freightAmount,
-      0
+      0,
     );
 
     const totalReceived = data.reduce(
       (sum, trip) => sum + trip.receivedAmount,
-      0
+      0,
     );
 
     return res.status(200).json({
@@ -3178,8 +3181,7 @@ exports.getCustomerLedgerById = async (req, res) => {
       data: {
         customer: {
           customerId,
-          customerName:
-            customer.companyName || customer.customerName,
+          customerName: customer.companyName || customer.customerName,
         },
 
         summary: {
@@ -3235,8 +3237,7 @@ exports.getBrokerLedger = async (req, res) => {
         if (!ledger[brokerId]) {
           ledger[brokerId] = {
             brokerId,
-            brokerName:
-              broker.companyName || broker.brokerName,
+            brokerName: broker.companyName || broker.brokerName,
 
             totalTrips: 0,
 
@@ -3251,13 +3252,10 @@ exports.getBrokerLedger = async (req, res) => {
         ledger[brokerId].totalTrips += 1;
 
         // Until broker payment module is ready
-        ledger[brokerId].payableAmount += Number(
-          trip.freightAmount || 0
-        );
+        ledger[brokerId].payableAmount += Number(trip.freightAmount || 0);
 
         ledger[brokerId].balance =
-          ledger[brokerId].payableAmount -
-          ledger[brokerId].paidAmount;
+          ledger[brokerId].payableAmount - ledger[brokerId].paidAmount;
       });
     });
 
@@ -3278,8 +3276,9 @@ exports.getBrokerLedgerById = async (req, res) => {
     const businessId = req.user.businessId;
     const { brokerId } = req.params;
 
-    const broker = await Broker.findById(brokerId)
-      .select("brokerName companyName");
+    const broker = await Broker.findById(brokerId).select(
+      "brokerName companyName",
+    );
 
     if (!broker) {
       return res.status(404).json({
@@ -3310,17 +3309,13 @@ exports.getBrokerLedgerById = async (req, res) => {
 
         tripDate: trip.createdAt,
 
-        vehicleNo:
-          trip.vehicleId?.regNo || "-",
+        vehicleNo: trip.vehicleId?.regNo || "-",
 
-        driverName:
-          trip.driver1?.driverName || "-",
+        driverName: trip.driver1?.driverName || "-",
 
-        origin:
-          trip.origin?.location || "-",
+        origin: trip.origin?.location || "-",
 
-        destination:
-          trip.destination?.location || "-",
+        destination: trip.destination?.location || "-",
 
         tripStatus: trip.tripStatus,
 
@@ -3330,20 +3325,16 @@ exports.getBrokerLedgerById = async (req, res) => {
 
         balance: payable - paid,
 
-        paymentStatus:
-          paid >= payable ? "Paid" : "Pending",
+        paymentStatus: paid >= payable ? "Paid" : "Pending",
       };
     });
 
     const totalPayable = data.reduce(
       (sum, trip) => sum + trip.payableAmount,
-      0
+      0,
     );
 
-    const totalPaid = data.reduce(
-      (sum, trip) => sum + trip.paidAmount,
-      0
-    );
+    const totalPaid = data.reduce((sum, trip) => sum + trip.paidAmount, 0);
 
     return res.status(200).json({
       success: true,
@@ -3351,8 +3342,7 @@ exports.getBrokerLedgerById = async (req, res) => {
         broker: {
           brokerId,
 
-          brokerName:
-            broker.companyName || broker.brokerName,
+          brokerName: broker.companyName || broker.brokerName,
         },
 
         summary: {
