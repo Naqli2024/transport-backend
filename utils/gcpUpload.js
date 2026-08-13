@@ -1,13 +1,32 @@
 const { Storage } = require("@google-cloud/storage");
-const path = require("path");
 
-const storage = new Storage({
-  projectId: process.env.GCP_PROJECT_ID,
-});
+const storageConfigs = JSON.parse(
+  process.env.GCP_STORAGE_CONFIGS || "{}"
+);
 
-const bucket = storage.bucket(process.env.GCP_BUCKET_NAME);
+const getBucket = (businessId) => {
+  if (!businessId) {
+    throw new Error("Business ID is required for GCP storage");
+  }
+
+  const config = storageConfigs[businessId];
+
+  if (!config) {
+    throw new Error(
+      `GCP storage configuration not found for businessId: ${businessId}`
+    );
+  }
+
+  const storage = new Storage({
+    projectId: config.projectId,
+    keyFilename: config.credentials,
+  });
+
+  return storage.bucket(config.bucket);
+};
 
 exports.uploadFile = async (file, businessId, folder) => {
+  const bucket = getBucket(businessId);
 
   const fileName = `businesses/${businessId}/${folder}/${Date.now()}-${file.originalname}`;
 
@@ -18,26 +37,27 @@ exports.uploadFile = async (file, businessId, folder) => {
     resumable: false,
   });
 
-  // Return GCS object path
   return fileName;
 };
 
-// Generate temporary URL
-exports.getSignedUrl = async (filePath) => {
+exports.getSignedUrl = async (filePath, businessId) => {
+  const bucket = getBucket(businessId);
 
   const file = bucket.file(filePath);
 
   const [url] = await file.getSignedUrl({
     version: "v4",
     action: "read",
-    expires: Date.now() + 1000 * 60 * 60, // 1 hour
+    expires: Date.now() + 1000 * 60 * 60,
   });
 
   return url;
 };
 
-exports.deleteFile = async (filePath) => {
+exports.deleteFile = async (filePath, businessId) => {
   try {
+    const bucket = getBucket(businessId);
+
     const file = bucket.file(filePath);
 
     const [exists] = await file.exists();
@@ -56,17 +76,17 @@ exports.replaceFile = async (
   folder,
   oldFilePath
 ) => {
-
-  // Upload new file
   const newFilePath = await exports.uploadFile(
     newFile,
     businessId,
     folder
   );
 
-  // Delete old file
   if (oldFilePath) {
-    await exports.deleteFile(oldFilePath);
+    await exports.deleteFile(
+      oldFilePath,
+      businessId
+    );
   }
 
   return newFilePath;

@@ -1625,7 +1625,7 @@ exports.bulkUploadTripDocuments = async (req, res) => {
       if (existingDocument) {
         // Delete old file from GCS
         if (existingDocument.filePath) {
-          await deleteFile(existingDocument.filePath);
+          await deleteFile(existingDocument.filePath, businessId);
         }
 
         existingDocument.filePath = newFilePath;
@@ -1697,7 +1697,7 @@ exports.getTripDocuments = async (req, res) => {
 
         createdAt: doc.createdAt,
 
-        fileUrl: await getSignedUrl(doc.filePath),
+        fileUrl: await getSignedUrl(doc.filePath, businessId),
       })),
     );
 
@@ -1758,7 +1758,7 @@ exports.updateTripDocument = async (req, res) => {
 
       // Delete old file
       if (oldFilePath) {
-        await deleteFile(oldFilePath);
+        await deleteFile(oldFilePath, businessId);
       }
     }
 
@@ -1795,7 +1795,7 @@ exports.deleteTripDocument = async (req, res) => {
     }
 
     // Delete from GCS
-    await deleteFile(document.filePath);
+    await deleteFile(document.filePath, businessId);
 
     // Delete from MongoDB
     await document.deleteOne();
@@ -1950,7 +1950,7 @@ exports.getWeighbridge = async (req, res) => {
 
     const weighbridge = {
       ...trip.weighbridge.toObject(),
-      receiptUrl: await getSignedUrl(trip.weighbridge.receiptPath),
+      receiptUrl: await getSignedUrl(trip.weighbridge.receiptPath, businessId),
     };
 
     return res.status(200).json({
@@ -2198,7 +2198,7 @@ exports.getTripFuelEntries = async (req, res) => {
         return {
           ...fuel.toObject(),
 
-          billUrl: fuel.billPath ? await getSignedUrl(fuel.billPath) : null,
+          billUrl: fuel.billPath ? await getSignedUrl(fuel.billPath, businessId) : null,
         };
       }),
     );
@@ -2238,7 +2238,7 @@ exports.getFuelEntry = async (req, res) => {
 
     const response = fuel.toObject();
 
-    response.billUrl = fuel.billPath ? await getSignedUrl(fuel.billPath) : null;
+    response.billUrl = fuel.billPath ? await getSignedUrl(fuel.billPath, businessId) : null;
 
     return res.status(200).json({
       success: true,
@@ -2608,7 +2608,7 @@ exports.getTripExpenses = async (req, res) => {
       expenses.map(async (expense) => {
         const obj = expense.toObject();
 
-        obj.billUrl = obj.filePath ? await getSignedUrl(obj.filePath) : null;
+        obj.billUrl = obj.filePath ? await getSignedUrl(obj.filePath, businessId) : null;
 
         return obj;
       }),
@@ -2659,7 +2659,7 @@ exports.updateTripExpense = async (req, res) => {
       expense.filePath = newBill;
 
       if (oldBill) {
-        await deleteFile(oldBill);
+        await deleteFile(oldBill, businessId);
       }
     }
 
@@ -2696,7 +2696,7 @@ exports.deleteTripExpense = async (req, res) => {
     }
 
     if (expense.filePath) {
-      await deleteFile(expense.filePath);
+      await deleteFile(expense.filePath, businessId);
     }
 
     await TripExpense.findByIdAndDelete(expenseId);
@@ -2728,7 +2728,7 @@ exports.getTripLedger = async (req, res) => {
     })
       .populate("vehicleId", "regNo")
       .populate("driver1", "driverName");
-    console.log("trips:", trip);
+    // console.log("trips:", trip);
 
     if (!trip) {
       return res.status(404).json({

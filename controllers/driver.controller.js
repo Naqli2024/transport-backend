@@ -603,7 +603,7 @@ exports.getCurrentTrip = async (req, res) => {
     }
 
     const fileUrl = trip.weighbridge?.receiptPath
-      ? await getSignedUrl(trip.weighbridge.receiptPath)
+      ? await getSignedUrl(trip.weighbridge.receiptPath, req.driver.businessId)
       : null;
 
     // Get Loading & Unloading Expenses
@@ -625,7 +625,7 @@ exports.getCurrentTrip = async (req, res) => {
       ? {
           ...loadingExpense,
           fileUrl: loadingExpense.billImage
-            ? await getSignedUrl(loadingExpense.billImage)
+            ? await getSignedUrl(loadingExpense.billImage, req.driver.businessId)
             : null,
         }
       : null;
@@ -634,7 +634,7 @@ exports.getCurrentTrip = async (req, res) => {
       ? {
           ...unloadingExpense,
           fileUrl: unloadingExpense.billImage
-            ? await getSignedUrl(unloadingExpense.billImage)
+            ? await getSignedUrl(unloadingExpense.billImage, req.driver.businessId)
             : null,
         }
       : null;

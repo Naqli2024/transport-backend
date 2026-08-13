@@ -1073,7 +1073,7 @@ exports.getVehicleDocuments = async (req, res) => {
         let fileUrl = null;
 
         if (doc.filePath) {
-          fileUrl = await getSignedUrl(doc.filePath);
+          fileUrl = await getSignedUrl(doc.filePath, businessId);
         }
 
         return {
@@ -1139,7 +1139,7 @@ exports.updateVehicleDocument = async (req, res) => {
 
     // Delete old file from GCS
     if (oldFilePath) {
-      await deleteFile(oldFilePath);
+      await deleteFile(oldFilePath, businessId);
     }
 
     return res.status(200).json({
@@ -1173,7 +1173,7 @@ exports.deleteVehicleDocument = async (req, res) => {
     }
 
     if (document.filePath) {
-      await deleteFile(document.filePath);
+      await deleteFile(document.filePath, businessId);
     }
 
     await document.deleteOne();
