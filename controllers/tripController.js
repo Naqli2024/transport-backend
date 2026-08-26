@@ -127,15 +127,10 @@ exports.createTrip = async (req, res) => {
     // ORIGIN
     // =========================
 
-    if (
-      !req.body.origin ||
-      !req.body.origin.location ||
-      !req.body.origin.city ||
-      !req.body.origin.state
-    ) {
+    if (!req.body.origin || !req.body.origin.location) {
       return res.status(400).json({
         success: false,
-        message: "Origin details are required",
+        message: "Origin location is required",
       });
     }
 
@@ -143,21 +138,16 @@ exports.createTrip = async (req, res) => {
     // DESTINATION
     // =========================
 
-    if (
-      !req.body.destination ||
-      !req.body.destination.location ||
-      !req.body.destination.city ||
-      !req.body.destination.state
-    ) {
+    if (!req.body.destination || !req.body.destination.location) {
       return res.status(400).json({
         success: false,
-        message: "Destination details are required",
+        message: "Destination location is required",
       });
     }
 
     if (
-      req.body.origin.city === req.body.destination.city &&
-      req.body.origin.location === req.body.destination.location
+      req.body.origin.location.trim().toLowerCase() ===
+      req.body.destination.location.trim().toLowerCase()
     ) {
       return res.status(400).json({
         success: false,
@@ -2198,7 +2188,9 @@ exports.getTripFuelEntries = async (req, res) => {
         return {
           ...fuel.toObject(),
 
-          billUrl: fuel.billPath ? await getSignedUrl(fuel.billPath, businessId) : null,
+          billUrl: fuel.billPath
+            ? await getSignedUrl(fuel.billPath, businessId)
+            : null,
         };
       }),
     );
@@ -2238,7 +2230,9 @@ exports.getFuelEntry = async (req, res) => {
 
     const response = fuel.toObject();
 
-    response.billUrl = fuel.billPath ? await getSignedUrl(fuel.billPath, businessId) : null;
+    response.billUrl = fuel.billPath
+      ? await getSignedUrl(fuel.billPath, businessId)
+      : null;
 
     return res.status(200).json({
       success: true,
@@ -2608,7 +2602,9 @@ exports.getTripExpenses = async (req, res) => {
       expenses.map(async (expense) => {
         const obj = expense.toObject();
 
-        obj.billUrl = obj.filePath ? await getSignedUrl(obj.filePath, businessId) : null;
+        obj.billUrl = obj.filePath
+          ? await getSignedUrl(obj.filePath, businessId)
+          : null;
 
         return obj;
       }),
