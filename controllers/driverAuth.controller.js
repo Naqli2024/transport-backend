@@ -1,5 +1,6 @@
 const Driver = require("../models/Driver");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 
 // ===============================
 // SEND OTP
@@ -136,6 +137,118 @@ exports.verifyOtp = async (req, res) => {
         _id: driver._id,
         driverId: driver.driverId,
         businessId: driver.businessId,
+        name: driver.name,
+        mobile: driver.mobile,
+        availableStatus: driver.availableStatus,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* =================================
+   DRIVER LOGIN
+   USERNAME + PASSWORD
+================================= */
+
+exports.loginDriver = async (req, res) => {
+  try {
+    const {
+      userName,
+      password,
+    } = req.body;
+
+    // ================================
+    // VALIDATION
+    // ================================
+
+    if (!userName || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username and password are required",
+      });
+    }
+
+    // ================================
+    // FIND DRIVER
+    //
+    // password has select:false
+    // so explicitly select it
+    // ================================
+
+    const driver = await Driver.findOne({
+      userName: userName.toLowerCase(),
+    }).select("+password");
+
+    if (!driver) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid username or password",
+      });
+    }
+
+    // ================================
+    // CHECK PASSWORD
+    // ================================
+
+    const isPasswordCorrect = await bcrypt.compare(
+      password,
+      driver.password,
+    );
+
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid username or password",
+      });
+    }
+
+    // ================================
+    // CHECK DRIVER STATUS
+    // ================================
+
+    if (driver.availableStatus === "Inactive") {
+      return res.status(403).json({
+        success: false,
+        message: "Driver account is inactive",
+      });
+    }
+
+    // ================================
+    // GENERATE JWT
+    // ================================
+
+    const token = jwt.sign(
+      {
+        driverId: driver._id,
+        businessId: driver.businessId,
+        role: "Driver",
+      },
+      process.env.JSON_WEB_TOKEN,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    // ================================
+    // RESPONSE
+    // ================================
+
+    res.status(200).json({
+      success: true,
+      message: "Driver login successful",
+
+      token,
+
+      driver: {
+        _id: driver._id,
+        driverId: driver.driverId,
+        businessId: driver.businessId,
+        userName: driver.userName,
         name: driver.name,
         mobile: driver.mobile,
         availableStatus: driver.availableStatus,

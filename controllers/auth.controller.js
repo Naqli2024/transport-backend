@@ -73,8 +73,7 @@ exports.login = async (req, res) => {
   }
 };
 
-
-// Get User with Business 
+// Get User with Business
 exports.getUserProfile = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -89,5 +88,76 @@ exports.getUserProfile = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+/* ================================= ADMIN AUTHENTICATION USERNAME OR MOBILE + PASSWORD ================================= */
+exports.authenticateAdmin = async (req, res) => {
+  try {
+    const { username, mobile, password } = req.body;
+    // ================================ // VALIDATION // ================================
+    if ((!username && !mobile) || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username or Mobile and password required",
+      });
+    }
+
+    let user;
+    let business;
+    // ================================ // LOGIN USING USERNAME // ================================
+    if (username) {
+      user = await User.findOne({ username: username.toLowerCase() });
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication Failure",
+        });
+      }
+      business = await Business.findById(user.businessId);
+      if (!business) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication Failure",
+        });
+      }
+    }
+    // ================================ // LOGIN USING MOBILE // ================================
+    if (mobile) {
+      business = await Business.findOne({ mobile });
+      if (!business) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication Failure",
+        });
+      }
+      user = await User.findOne({ businessId: business._id });
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication Failure",
+        });
+      }
+    }
+
+    // ================================ // CHECK PASSWORD // ================================
+    const isMatch = await bcrypt.compare(password, user.password);
+    // ================================ // PASSWORD DOES NOT MATCH // ================================
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication Failure",
+      });
+    }
+    // ================================ // AUTHENTICATED // ================================
+    return res.status(200).json({
+      success: true,
+      message: "Authenticated",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };

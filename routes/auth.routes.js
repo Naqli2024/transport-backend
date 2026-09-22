@@ -9,4 +9,6 @@ router.post("/login", controller.login);
 // Get profile
 router.get("/user-details", auth, controller.getUserProfile);
 
+router.post("/authenticate", auth, controller.authenticateAdmin);
+
 module.exports = router;

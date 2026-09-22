@@ -9,6 +9,8 @@ const {
   deleteFile,
   replaceFile,
 } = require("../utils/gcpUpload");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 /* =================================
    CREATE DRIVER
@@ -18,9 +20,44 @@ exports.createDriver = async (req, res) => {
   try {
     const businessId = req.user.businessId;
 
-    const { mobile, dlNo } = req.body;
+    const {
+      userName,
+      password,
+      mobile,
+      dlNo,
+    } = req.body;
 
+    // ================================
+    // REQUIRED LOGIN FIELDS
+    // ================================
+
+    if (!userName || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username and password are required",
+      });
+    }
+
+    // ================================
+    // DUPLICATE USERNAME
+    // ================================
+
+    const existingUsername = await Driver.findOne({
+      businessId,
+      userName: userName.toLowerCase(),
+    });
+
+    if (existingUsername) {
+      return res.status(400).json({
+        success: false,
+        message: "Username already exists",
+      });
+    }
+
+    // ================================
     // DUPLICATE MOBILE
+    // ================================
+
     const existingMobile = await Driver.findOne({
       businessId,
       mobile,
@@ -33,7 +70,10 @@ exports.createDriver = async (req, res) => {
       });
     }
 
+    // ================================
     // DUPLICATE LICENSE
+    // ================================
+
     const existingLicense = await Driver.findOne({
       businessId,
       dlNo: dlNo.toUpperCase(),
@@ -46,19 +86,47 @@ exports.createDriver = async (req, res) => {
       });
     }
 
+    // ================================
+    // HASH PASSWORD
+    // ================================
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // ================================
     // CREATE DRIVER
+    // ================================
+
     const driver = await Driver.create({
       businessId,
+
       ...req.body,
+
+      userName: userName.toLowerCase(),
+
+      password: hashedPassword,
+
       dlNo: dlNo.toUpperCase(),
     });
+
+    // Don't send password back
+    const driverResponse = driver.toObject();
+
+    delete driverResponse.password;
 
     res.status(201).json({
       success: true,
       message: "Driver created successfully",
-      data: driver,
+      data: driverResponse,
     });
   } catch (error) {
+    // Duplicate index protection
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Username or driver ID already exists",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: error.message,
@@ -137,11 +205,14 @@ exports.updateDriver = async (req, res) => {
 
     const { driverId } = req.params;
 
+    // ================================
     // CHECK DRIVER EXISTS
+    // ================================
+
     const driver = await Driver.findOne({
       _id: driverId,
       businessId,
-    });
+    }).select("+password");
 
     if (!driver) {
       return res.status(404).json({
@@ -150,9 +221,28 @@ exports.updateDriver = async (req, res) => {
       });
     }
 
-    // ============================
+    // ================================
+    // DUPLICATE USERNAME CHECK
+    // ================================
+
+    if (req.body.userName) {
+      const existingUsername = await Driver.findOne({
+        businessId,
+        userName: req.body.userName.toLowerCase(),
+        _id: { $ne: driverId },
+      });
+
+      if (existingUsername) {
+        return res.status(400).json({
+          success: false,
+          message: "Username already exists",
+        });
+      }
+    }
+
+    // ================================
     // DUPLICATE MOBILE CHECK
-    // ============================
+    // ================================
 
     if (req.body.mobile) {
       const existingMobile = await Driver.findOne({
@@ -169,9 +259,9 @@ exports.updateDriver = async (req, res) => {
       }
     }
 
-    // ============================
+    // ================================
     // DUPLICATE LICENSE CHECK
-    // ============================
+    // ================================
 
     if (req.body.dlNo) {
       const existingLicense = await Driver.findOne({
@@ -188,32 +278,79 @@ exports.updateDriver = async (req, res) => {
       }
     }
 
-    // ============================
+    // ================================
+    // PREPARE UPDATE DATA
+    // ================================
+
+    const updateData = {
+      ...req.body,
+    };
+
+    // ================================
+    // USERNAME
+    // ================================
+
+    if (req.body.userName) {
+      updateData.userName = req.body.userName.toLowerCase();
+    }
+
+    // ================================
+    // PASSWORD
+    // ================================
+
+    if (req.body.password) {
+      updateData.password = await bcrypt.hash(
+        req.body.password,
+        10,
+      );
+    }
+
+    // ================================
+    // LICENSE
+    // ================================
+
+    if (req.body.dlNo) {
+      updateData.dlNo = req.body.dlNo.toUpperCase();
+    }
+
+    // ================================
     // UPDATE DRIVER
-    // ============================
+    // ================================
 
     const updatedDriver = await Driver.findOneAndUpdate(
       {
         _id: driverId,
         businessId,
       },
-      {
-        ...req.body,
-
-        dlNo: req.body.dlNo ? req.body.dlNo.toUpperCase() : driver.dlNo,
-      },
+      updateData,
       {
         new: true,
         runValidators: true,
       },
     ).populate("vehicle.vehicleId");
 
+    // ================================
+    // REMOVE PASSWORD FROM RESPONSE
+    // ================================
+
+    const driverResponse = updatedDriver.toObject();
+
+    delete driverResponse.password;
+
     res.status(200).json({
       success: true,
       message: "Driver updated successfully",
-      data: updatedDriver,
+      data: driverResponse,
     });
   } catch (error) {
+    // Duplicate index protection
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Username or driver ID already exists",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: error.message,

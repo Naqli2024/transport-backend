@@ -8,13 +8,34 @@ const driverSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
+    // =================================
     // DRIVER ID
+    // =================================
     driverId: {
       type: String,
-      unique: true,
+      required: false,
     },
 
+    // =================================
+    // LOGIN
+    // =================================
+    userName: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+
+    password: {
+      type: String,
+      required: true,
+      select: false,
+    },
+
+    // =================================
     // BASIC INFO
+    // =================================
     name: {
       type: String,
       required: true,
@@ -26,10 +47,6 @@ const driverSchema = new mongoose.Schema(
       required: true,
     },
 
-    otp: String,
-
-    otpExpiry: Date,
-
     aadhaarNo: Number,
 
     experience: {
@@ -37,7 +54,9 @@ const driverSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // =================================
     // LICENSE INFO
+    // =================================
     dlNo: {
       type: String,
       required: true,
@@ -50,19 +69,30 @@ const driverSchema = new mongoose.Schema(
     },
 
     licenseExpiryDate: String,
+
+    // =================================
+    // VEHICLE
+    // =================================
     vehicle: {
       status: {
         type: String,
         enum: ["Assigned", "Unassigned"],
         default: "Unassigned",
       },
+
       vehicleId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Vehicle",
       },
+
       regNo: String,
+
       assignedDate: Date,
     },
+
+    // =================================
+    // DRIVER STATUS
+    // =================================
     availableStatus: {
       type: String,
       enum: [
@@ -76,28 +106,55 @@ const driverSchema = new mongoose.Schema(
       ],
       default: "Available",
     },
+
     score: {
       type: Number,
       default: 0,
     },
+
     currentTripId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Trip",
       default: null,
     },
+
     totalTrips: {
       type: Number,
       default: 0,
     },
+
     lat: Number,
-    lng: Number
+
+    lng: Number,
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  },
 );
 
 /* =================================
+   UNIQUE USERNAME PER BUSINESS
+================================= */
+
+driverSchema.index({ businessId: 1, userName: 1 }, { unique: true });
+
+/* =================================
+   UNIQUE DRIVER ID PER BUSINESS
+================================= */
+
+driverSchema.index({ businessId: 1, driverId: 1 }, { unique: true });
+
+/* =================================
    AUTO GENERATE DRIVER ID
+   PER BUSINESS
+
+   Business A:
    DRV-001
+   DRV-002
+
+   Business B:
+   DRV-001
+   DRV-002
 ================================= */
 
 driverSchema.pre("save", async function () {
@@ -107,14 +164,18 @@ driverSchema.pre("save", async function () {
 
   const Driver = mongoose.model("Driver");
 
-  const lastDriver = await Driver.findOne().sort({ createdAt: -1 });
+  const lastDriver = await Driver.findOne({
+    businessId: this.businessId,
+  }).sort({ createdAt: -1 });
 
   let nextNumber = 1;
 
   if (lastDriver && lastDriver.driverId) {
-    const lastNumber = parseInt(lastDriver.driverId.split("-")[1]);
+    const lastNumber = parseInt(lastDriver.driverId.split("-")[1], 10);
 
-    nextNumber = lastNumber + 1;
+    if (!isNaN(lastNumber)) {
+      nextNumber = lastNumber + 1;
+    }
   }
 
   this.driverId = `DRV-${String(nextNumber).padStart(3, "0")}`;
