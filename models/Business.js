@@ -21,6 +21,12 @@ const businessSchema = new mongoose.Schema(
     },
     gstNo: String,
     businessType: String,
+    
+    // COMPANY LOGO
+    logo: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

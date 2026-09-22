@@ -1,6 +1,7 @@
 const Business = require("../models/Business");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const gcpUpload = require("../utils/gcpUpload");
 
 const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -95,15 +96,125 @@ exports.getBusinessById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const business = await Business.findById(id);
+    const business = await Business.findById(id).lean();
 
     if (!business) {
-      return res.status(404).json({ message: "Business not found" });
+      return res.status(404).json({
+        message: "Business not found",
+      });
     }
 
-    res.json(business);
+    // =================================
+    // GET SIGNED URL FOR BUSINESS LOGO
+    // =================================
+
+    let logoUrl = null;
+
+    if (business.logo) {
+      logoUrl = await gcpUpload.getSignedUrl(
+        business.logo,
+        id
+      );
+    }
+
+    res.json({
+      ...business,
+      logoUrl,
+    });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+};
+
+/* =========================================
+   UPLOAD / UPDATE BUSINESS LOGO
+========================================= */
+
+exports.uploadBusinessLogo = async (req, res) => {
+  try {
+    const { businessId } = req.params;
+
+    // ================================
+    // CHECK FILE
+    // ================================
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Business logo is required",
+      });
+    }
+
+    // ================================
+    // CHECK BUSINESS
+    // ================================
+
+    const business = await Business.findById(businessId);
+
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: "Business not found",
+      });
+    }
+
+    // ================================
+    // UPLOAD NEW LOGO
+    // ================================
+
+    const newLogoPath = await gcpUpload.uploadFile(
+      req.file,
+      businessId,
+      "logo",
+    );
+
+    // ================================
+    // DELETE OLD LOGO
+    // ================================
+
+    if (business.logo) {
+      await gcpUpload.deleteFile(
+        business.logo,
+        businessId,
+      );
+    }
+
+    // ================================
+    // UPDATE BUSINESS
+    // ================================
+
+    business.logo = newLogoPath;
+
+    await business.save();
+
+    // ================================
+    // GET SIGNED URL
+    // ================================
+
+    const logoUrl = await gcpUpload.getSignedUrl(
+      business.logo,
+      businessId,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Business logo uploaded successfully",
+
+      data: {
+        businessId: business._id,
+        logo: business.logo,
+        logoUrl,
+      },
+    });
+  } catch (error) {
+    console.error("Business Logo Upload Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };

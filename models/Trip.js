@@ -47,7 +47,9 @@ const tripSchema = new mongoose.Schema(
 
     uom: String,
 
-    freightAmount: Number,
+    amountPerTon: Number,
+
+    estimatedFreightAmount: Number,
 
     advanceAmount: Number,
 
@@ -131,6 +133,7 @@ const tripSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    driverSalary: Number,
 
     tripStatus: {
       type: String,
