@@ -2,16 +2,24 @@ const mongoose = require("mongoose");
 
 const tripSchema = new mongoose.Schema(
   {
+    // =========================================================
+    // BUSINESS
+    // =========================================================
+
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
       required: true,
+      index: true,
     },
 
     tripNo: {
       type: String,
-      unique: true,
     },
+
+    // =========================================================
+    // VEHICLE / FLEET
+    // =========================================================
 
     fleetSource: {
       type: String,
@@ -19,11 +27,13 @@ const tripSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Own Fleet
     vehicleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Vehicle",
     },
 
+    // Vendor
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Vendor",
@@ -34,106 +44,29 @@ const tripSchema = new mongoose.Schema(
       ref: "VendorVehicle",
     },
 
+    // =========================================================
+    // JOURNEY
+    // =========================================================
+
     journeyType: {
       type: String,
       enum: ["One Way", "Round Trip", "Multi Leg", "Relay", "Dedicated"],
-    },
-
-    vehicleCategory: String,
-
-    commodity: String,
-
-    weight: Number,
-
-    uom: String,
-
-    amountPerTon: Number,
-
-    estimatedFreightAmount: Number,
-
-    advanceAmount: Number,
-
-    loadType: {
-      type: String,
-      enum: ["FTL", "PTL"],
-    },
-
-    paymentType: {
-      type: String,
-      enum: ["Account", "Cash"],
-    },
-
-    customerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Customer",
-    },
-
-    brokerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Broker",
-    },
-
-    origin: {
-      location: String,
-    },
-
-    destination: {
-      location: String,
-    },
-
-    journeyLegs: [
-      {
-        legNo: Number,
-
-        from: String,
-
-        to: String,
-
-        customerId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Customer",
-        },
-
-        brokerId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Broker",
-        },
-
-        status: {
-          type: String,
-          enum: ["Pending", "In Progress", "Arrived", "Completed"],
-          default: "Pending",
-        },
-      },
-    ],
-
-    currentLeg: {
-      type: Number,
-      default: 1,
-    },
-
-    lrNo: String,
-
-    driver1: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
       required: true,
     },
 
-    driver2: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
-    },
-
-    cleanerName: String,
-
-    cleanerPhone: String,
-
-    driverAdvance: {
+    // Current active leg number
+    // Example:
+    // currentLeg: 1 => journeyLegs[0]
+    // currentLeg: 2 => journeyLegs[1]
+    currentLeg: {
       type: Number,
-      default: 0,
+      default: 1,
+      min: 1,
     },
-    driverSalary: Number,
+
+    // =========================================================
+    // OVERALL TRIP STATUS
+    // =========================================================
 
     tripStatus: {
       type: String,
@@ -149,182 +82,520 @@ const tripSchema = new mongoose.Schema(
         "Unloading",
         "Delivery OTP Pending",
         "Completed",
-        "Closed",
+        "Closed"
       ],
       default: "Pre Trip Pending",
     },
-    pickupReachedAt: Date,
-    startTime: Date,
-    startOdometer: Number,
-    endTime: Date,
-    loading: {
-      loadingStartTime: Date,
-      loadingEndTime: Date,
-      loadedWeight: Number,
-      loadedBy: String,
-      remarks: String,
-      status: {
-        type: String,
-        enum: ["Pending", "Loading", "Completed"],
-        default: "Pending",
+
+    // =========================================================
+    // JOURNEY LEGS
+    // =========================================================
+
+    journeyLegs: [
+      {
+        // -----------------------------------------------------
+        // LEG IDENTIFICATION
+        // -----------------------------------------------------
+
+        legNo: {
+          type: Number,
+          required: true,
+        },
+
+        // -----------------------------------------------------
+        // ROUTE
+        // -----------------------------------------------------
+
+        from: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+
+        to: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+
+        // -----------------------------------------------------
+        // CUSTOMER / BROKER
+        // -----------------------------------------------------
+
+        customerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Customer",
+        },
+
+        brokerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Broker",
+        },
+
+        // -----------------------------------------------------
+        // CONSIGNMENT
+        // -----------------------------------------------------
+
+        commodity: {
+          type: String,
+          trim: true,
+        },
+
+        weight: {
+          type: Number,
+          min: 0,
+        },
+
+        uom: {
+          type: String,
+          trim: true,
+        },
+
+        amountPerTon: {
+          type: Number,
+          min: 0,
+        },
+
+        estimatedFreightAmount: {
+          type: Number,
+          min: 0,
+        },
+
+        loadType: {
+          type: String,
+          trim: true,
+        },
+
+        paymentType: {
+          type: String,
+          trim: true,
+        },
+
+        // -----------------------------------------------------
+        // DRIVER
+        // -----------------------------------------------------
+
+        driver1: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Driver",
+        },
+
+        driver2: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Driver",
+        },
+
+        driverSalary: {
+          type: Number,
+          min: 0,
+        },
+
+        // -----------------------------------------------------
+        // DRIVER ADVANCE HISTORY
+        // -----------------------------------------------------
+
+        driverAdvance: [
+          {
+            date: {
+              type: Date,
+              required: true,
+            },
+
+            amount: {
+              type: Number,
+              required: true,
+              min: 0,
+            },
+          },
+        ],
+
+        // -----------------------------------------------------
+        // LEG STATUS
+        // -----------------------------------------------------
+
+        legStatus: {
+          type: String,
+          enum: [
+            "Pre Trip Pending",
+            "Inspection Pending",
+            "Ready For Loading",
+            "Reached Pickup",
+            "Loading",
+            "Documents Pending",
+            "Ready To Start",
+            "In Transit",
+            "Unloading",
+            "Completed",
+          ],
+          default: "Pre Trip Pending",
+        },
+
+        // =====================================================
+        // PICKUP
+        // =====================================================
+
+        pickupReachedAt: {
+          type: Date,
+        },
+
+        // =====================================================
+        // LOADING
+        // =====================================================
+
+        loading: {
+          loadingStartTime: {
+            type: Date,
+          },
+
+          loadingEndTime: {
+            type: Date,
+          },
+
+          loadedWeight: {
+            type: Number,
+            min: 0,
+          },
+
+          loadedBy: {
+            type: String,
+            trim: true,
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
+          },
+
+          status: {
+            type: String,
+            enum: ["Pending", "In Progress", "Completed"],
+            default: "Pending",
+          },
+        },
+
+        // =====================================================
+        // JOURNEY START
+        // =====================================================
+
+        startTime: {
+          type: Date,
+        },
+
+        // startOdometer: {
+        //   type: Number,
+        //   min: 0,
+        // },
+
+        // =====================================================
+        // ARRIVAL
+        // =====================================================
+
+        arrivalTime: {
+          type: Date,
+        },
+
+        arrivalOdometer: {
+          type: Number,
+          min: 0,
+        },
+
+        arrivalRemarks: {
+          type: String,
+          trim: true,
+        },
+
+        endTime: {
+          type: Date,
+        },
+
+        // =====================================================
+        // UNLOADING
+        // =====================================================
+
+        unloading: {
+          unloadingStartTime: {
+            type: Date,
+          },
+
+          unloadingEndTime: {
+            type: Date,
+          },
+
+          unloadedWeight: {
+            type: Number,
+            min: 0,
+          },
+
+          unloadedBy: {
+            type: String,
+            trim: true,
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
+          },
+
+          status: {
+            type: String,
+            enum: ["Pending", "In Progress", "Completed"],
+            default: "Pending",
+          },
+        },
+
+        // =====================================================
+        // POD
+        // =====================================================
+
+        pod: {
+          podUrl: {
+            type: String,
+            trim: true,
+          },
+
+          uploadedAt: {
+            type: Date,
+          },
+
+          uploadedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
+          },
+        },
+
+        // =====================================================
+        // WEIGHBRIDGE
+        // =====================================================
+
+        weighbridge: {
+          status: {
+            type: String,
+            enum: ["Pending", "Completed"],
+            default: "Pending",
+          },
+
+          grossWeight: {
+            type: Number,
+            min: 0,
+          },
+
+          uom: {
+            type: String,
+            trim: true,
+          },
+
+          ticketNumber: {
+            type: String,
+            trim: true,
+          },
+
+          weighbridgeName: {
+            type: String,
+            trim: true,
+          },
+
+          weighbridgeFee: {
+            type: Number,
+            min: 0,
+          },
+
+          receiptPath: {
+            type: String,
+            trim: true,
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
+          },
+
+          measuredAt: {
+            type: Date,
+          },
+
+          measuredBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Driver",
+          },
+        },
+
+        // =====================================================
+        // LEG EXPENSE
+        // =====================================================
+
+        tripExpense: [
+          {
+            expenseType: {
+              type: String,
+              trim: true,
+            },
+
+            amount: {
+              type: Number,
+              min: 0,
+            },
+
+            date: {
+              type: Date,
+            },
+
+            remarks: {
+              type: String,
+              trim: true,
+            },
+          },
+        ],
+
+        // =====================================================
+        // LEG DISTANCE
+        // =====================================================
+
+        distanceTravelled: {
+          type: Number,
+          min: 0,
+        },
+
+        // =====================================================
+        // LEG COMPLETION
+        // =====================================================
+
+        completedAt: {
+          type: Date,
+        },
       },
-    },
-    unloading: {
-      unloadingStartTime: Date,
+    ],
 
-      unloadingEndTime: Date,
-
-      unloadedWeight: Number,
-
-      unloadedBy: String,
-
-      podNumber: String,
-
-      remarks: String,
-
-      status: {
-        type: String,
-        enum: ["Pending", "Unloading", "Completed"],
-        default: "Pending",
-      },
-    },
-    deliveryOtp: {
-      type: String,
-    },
-
-    deliveryOtpExpiry: {
-      type: Date,
-    },
-
-    deliveryOtpVerified: {
-      type: Boolean,
-      default: false,
-    },
-
-    pod: {
-      status: {
-        type: String,
-        enum: ["Pending", "Uploaded"],
-        default: "Pending",
-      },
-
-      podPath: String,
-
-      invoicePath: String,
-
-      deliveryChallanPath: String,
-
-      uploadedAt: Date,
-
-      uploadedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Driver",
-      },
-
-      remarks: String,
-    },
-    arrivalTime: Date,
-
-    arrivalOdometer: Number,
-
-    arrivalRemarks: String,
-
-    weighbridge: {
-      status: {
-        type: String,
-        enum: ["Pending", "Completed"],
-        default: "Pending",
-      },
-
-      grossWeight: {
-        type: Number,
-      },
-
-      uom: String,
-
-      ticketNumber: {
-        type: String,
-      },
-
-      weighbridgeName: {
-        type: String,
-      },
-
-      weighbridgeFee: {
-        type: Number,
-      },
-
-      receiptPath: {
-        type: String,
-      },
-
-      remarks: {
-        type: String,
-      },
-
-      measuredAt: {
-        type: Date,
-      },
-
-      measuredBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Driver",
-      },
-    },
-
-    tripExpense: {
-      expenseType: {
-        type: String,
-        enum: ["Loading", "Unloading", "Parking", "Repair", "Miscellaneous"],
-      },
-      amount: String,
-    },
+    // =========================================================
+    // TRIP LEVEL TOTALS
+    // =========================================================
 
     totalFuelCost: {
       type: Number,
       default: 0,
+      min: 0,
     },
+
     totalFuelQuantity: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
-    totalFuelEntries: {
-      type: Number,
-      default: 0,
-    },
+    totalFuelEntries: [
+      {
+        date: {
+          type: Date,
+        },
+
+        quantity: {
+          type: Number,
+          min: 0,
+        },
+
+        amount: {
+          type: Number,
+          min: 0,
+        },
+
+        odometer: {
+          type: Number,
+          min: 0,
+        },
+
+        remarks: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+
     totalExpense: {
       type: Number,
       default: 0,
+      min: 0,
     },
-    totalExpenseEntries: {
-      type: Number,
-      default: 0,
-    },
+
+    totalExpenseEntries: [
+      {
+        expenseType: {
+          type: String,
+          trim: true,
+        },
+
+        amount: {
+          type: Number,
+          min: 0,
+        },
+
+        date: {
+          type: Date,
+        },
+
+        remarks: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+
+    // =========================================================
+    // OVERALL TRIP FINANCIALS
+    // =========================================================
 
     profit: {
       type: Number,
       default: 0,
     },
+
+    // Overall trip distance
     distanceTravelled: {
       type: Number,
       default: 0,
+      min: 0,
     },
-    totalFuelQuantity: {
-      type: Number,
-      default: 0,
-    },
-    completedAt: Date,
 
-    closedAt: Date,
+    // =========================================================
+    // TRIP DATES
+    // =========================================================
+
+    completedAt: {
+      type: Date,
+    },
+
+    closedAt: {
+      type: Date,
+    },
+
+    // =========================================================
+    // SETTLEMENT
+    // =========================================================
+
     settlement: {
       status: {
         type: String,
-        enum: ["Pending", "Settled"],
+        enum: ["Pending", "Partial", "Settled"],
         default: "Pending",
       },
-      settledAt: Date,
-      remarks: String,
+
+      settledAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      settledAt: {
+        type: Date,
+      },
+
+      remarks: {
+        type: String,
+        trim: true,
+      },
     },
   },
   {
@@ -332,14 +603,69 @@ const tripSchema = new mongoose.Schema(
   },
 );
 
+// =============================================================
+// INDEXES
+// =============================================================
+
+// Trip number unique only within a business.
+// Sequence continues across years.
+tripSchema.index(
+  {
+    businessId: 1,
+    tripNo: 1,
+  },
+  {
+    unique: true,
+  },
+);
+
+// Useful for business trip listing/search
+tripSchema.index({
+  businessId: 1,
+  createdAt: -1,
+});
+
+// Useful for active trip queries
+tripSchema.index({
+  businessId: 1,
+  tripStatus: 1,
+});
+
+// =============================================================
+// AUTO GENERATE TRIP NUMBER
+// =============================================================
+
 tripSchema.pre("save", async function () {
-  if (this.tripNo) return;
+  if (this.tripNo) {
+    return;
+  }
 
   const Trip = mongoose.model("Trip");
 
-  const count = await Trip.countDocuments();
+  const lastTrip = await Trip.findOne({
+    businessId: this.businessId,
+  })
+    .sort({
+      createdAt: -1,
+    })
+    .select("tripNo");
 
-  this.tripNo = `TRP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+  let nextNumber = 1;
+
+  if (lastTrip && lastTrip.tripNo) {
+    const lastNumber = parseInt(lastTrip.tripNo.split("-").pop(), 10);
+
+    if (!isNaN(lastNumber)) {
+      nextNumber = lastNumber + 1;
+    }
+  }
+
+  this.tripNo = `TRP-${new Date().getFullYear()}-${String(nextNumber).padStart(
+    4,
+    "0",
+  )}`;
 });
 
-module.exports = mongoose.model("Trip", tripSchema);
+const Trip = mongoose.model("Trip", tripSchema);
+
+module.exports = Trip;

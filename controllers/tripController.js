@@ -25,352 +25,467 @@ exports.createTrip = async (req, res) => {
   try {
     const businessId = req.user.businessId;
 
-    // =========================
-    // OWN FLEET
-    // =========================
+    const {
+      fleetSource,
+      vehicleId,
+      vendorId,
+      vendorVehicleId,
+      journeyType,
+      journeyLegs,
+    } = req.body;
 
-    if (req.body.fleetSource === "Own Fleet") {
-      const vehicle = await Vehicle.findOne({
-        _id: req.body.vehicleId,
-        businessId,
-      });
+    // =========================================================
+    // BASIC VALIDATION
+    // =========================================================
 
-      if (!vehicle) {
-        return res.status(404).json({
-          success: false,
-          message: "Vehicle not found",
-        });
-      }
-
-      if (vehicle.status !== "Available") {
-        return res.status(400).json({
-          success: false,
-          message: `Vehicle currently ${vehicle.status}`,
-        });
-      }
-    }
-
-    // =========================
-    // VENDOR VEHICLE
-    // =========================
-
-    if (req.body.fleetSource === "Vendor") {
-      const vendorVehicle = await VendorVehicle.findOne({
-        _id: req.body.vendorVehicleId,
-        businessId,
-      });
-
-      if (!vendorVehicle) {
-        return res.status(404).json({
-          success: false,
-          message: "Vendor vehicle not found",
-        });
-      }
-
-      if (vendorVehicle.status !== "Available") {
-        return res.status(400).json({
-          success: false,
-          message: "Vendor vehicle already assigned",
-        });
-      }
-    }
-
-    // // =========================
-    // // CUSTOMER
-    // // =========================
-
-    // const customer = await Customer.findOne({
-    //   _id: req.body.customerId,
-    //   businessId,
-    // });
-
-    // if (!customer) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     message: "Customer not found",
-    //   });
-    // }
-
-    // if (customer.status !== "Active") {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Customer is inactive",
-    //   });
-    // }
-
-    // // =========================
-    // // BROKER
-    // // =========================
-
-    // if (req.body.brokerId) {
-    //   const broker = await Broker.findOne({
-    //     _id: req.body.brokerId,
-    //     businessId,
-    //   });
-
-    //   if (!broker) {
-    //     return res.status(404).json({
-    //       success: false,
-    //       message: "Broker not found",
-    //     });
-    //   }
-
-    //   if (broker.status !== "Active") {
-    //     return res.status(400).json({
-    //       success: false,
-    //       message: "Broker is inactive",
-    //     });
-    //   }
-    // }
-
-    // =========================
-    // ORIGIN
-    // =========================
-
-    if (!req.body.origin || !req.body.origin.location) {
+    if (!fleetSource) {
       return res.status(400).json({
         success: false,
-        message: "Origin location is required",
+        message: "fleetSource is required",
       });
     }
 
-    // =========================
-    // DESTINATION
-    // =========================
-
-    if (!req.body.destination || !req.body.destination.location) {
+    if (!journeyType) {
       return res.status(400).json({
         success: false,
-        message: "Destination location is required",
+        message: "journeyType is required",
       });
     }
 
-    if (
-      req.body.origin.location.trim().toLowerCase() ===
-      req.body.destination.location.trim().toLowerCase()
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Origin and Destination cannot be same",
-      });
-    }
-
-    // =========================
-    // JOURNEY LEGS
-    // =========================
-
-    if (
-      !Array.isArray(req.body.journeyLegs) ||
-      req.body.journeyLegs.length === 0
-    ) {
+    if (!Array.isArray(journeyLegs) || journeyLegs.length === 0) {
       return res.status(400).json({
         success: false,
         message: "At least one journey leg is required",
       });
     }
-    for (const leg of req.body.journeyLegs) {
-      if (!leg.from || !leg.to) {
-        return res.status(400).json({
-          success: false,
-          message: "Every journey leg must have From and To",
-        });
-      }
 
-      if (leg.customerId) {
-        const customer = await Customer.findOne({
-          _id: leg.customerId,
-          businessId,
-        });
+    // =========================================================
+    // JOURNEY TYPE LEG COUNT VALIDATION
+    // =========================================================
 
-        if (!customer) {
-          return res.status(404).json({
-            success: false,
-            message: "Journey leg customer not found",
-          });
-        }
-        if (customer.status !== "Active") {
-          return res.status(400).json({
-            success: false,
-            message: "Journey leg customer is inactive",
-          });
-        }
-      }
-
-      if (leg.brokerId) {
-        const broker = await Broker.findOne({
-          _id: leg.brokerId,
-          businessId,
-        });
-
-        if (!broker) {
-          return res.status(404).json({
-            success: false,
-            message: "Journey leg broker not found",
-          });
-        }
-      }
-    }
-
-    const totalLegs = req.body.journeyLegs.length;
-
-    switch (req.body.journeyType) {
+    switch (journeyType) {
       case "One Way":
-        if (totalLegs !== 1) {
+        if (journeyLegs.length !== 1) {
           return res.status(400).json({
             success: false,
-            message: "One Way trip requires exactly 1 journey leg",
+            message: "One Way journey must contain exactly 1 leg",
           });
         }
         break;
 
       case "Round Trip":
-        if (totalLegs !== 2) {
+        if (journeyLegs.length !== 2) {
           return res.status(400).json({
             success: false,
-            message: "Round Trip requires exactly 2 journey legs",
+            message: "Round Trip journey must contain exactly 2 legs",
           });
         }
         break;
 
       case "Multi Leg":
-        if (totalLegs < 3) {
+        if (journeyLegs.length < 1) {
           return res.status(400).json({
             success: false,
-            message: "Multi Leg requires at least 3 journey legs",
+            message: "Multi Leg journey must contain at least 1 leg",
           });
         }
         break;
 
       case "Relay":
-        if (totalLegs !== 2) {
+        if (journeyLegs.length !== 2) {
           return res.status(400).json({
             success: false,
-            message: "Relay trip requires exactly 2 journey legs",
+            message: "Relay journey must contain exactly 2 legs",
           });
         }
         break;
 
       case "Dedicated":
-        if (totalLegs < 1) {
+        if (journeyLegs.length < 1) {
           return res.status(400).json({
             success: false,
-            message: "Dedicated trip requires at least one journey leg",
+            message: "Dedicated journey must contain at least 1 leg",
           });
         }
         break;
-    }
 
-    // =========================
-    // DRIVER 1
-    // =========================
-    if (!req.body.driver1) {
-      return res.status(400).json({
-        success: false,
-        message: "Primary driver is required",
-      });
-    }
-
-    if (req.body.driver1) {
-      const driver = await Driver.findOne({
-        _id: req.body.driver1,
-        businessId,
-      });
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: "Driver not found",
-        });
-      }
-
-      if (driver.availableStatus !== "Available") {
+      default:
         return res.status(400).json({
           success: false,
-          message: `Driver currently ${driver.availableStatus}`,
+          message: `Invalid journey type: ${journeyType}`,
         });
-      }
     }
 
-    // =========================
-    // DRIVER 2
-    // =========================
+    // =========================================================
+    // VEHICLE VALIDATION
+    // =========================================================
 
-    if (req.body.driver2) {
-      const driver2 = await Driver.findOne({
-        _id: req.body.driver2,
-        businessId,
-      });
-
-      if (!driver2) {
-        return res.status(404).json({
-          success: false,
-          message: "Second driver not found",
-        });
-      }
-
-      if (driver2.availableStatus !== "Available") {
+    if (fleetSource === "Own Fleet") {
+      if (!vehicleId) {
         return res.status(400).json({
           success: false,
-          message: `Second driver currently ${driver2.availableStatus}`,
+          message: "vehicleId is required for Own Fleet",
+        });
+      }
+
+      const vehicle = await Vehicle.findOne({
+        _id: vehicleId,
+        businessId,
+        fleet: "vehicle",
+        status: "Available",
+      });
+
+      if (!vehicle) {
+        return res.status(400).json({
+          success: false,
+          message: "Vehicle not found or not available",
         });
       }
     }
 
-    if (
-      req.body.driver1 &&
-      req.body.driver2 &&
-      req.body.driver1 === req.body.driver2
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver 1 and Driver 2 cannot be same",
+    if (fleetSource === "Vendor") {
+      if (!vendorId) {
+        return res.status(400).json({
+          success: false,
+          message: "vendorId is required for Vendor fleet",
+        });
+      }
+
+      if (!vendorVehicleId) {
+        return res.status(400).json({
+          success: false,
+          message: "vendorVehicleId is required for Vendor fleet",
+        });
+      }
+
+      const vendorVehicle = await VendorVehicle.findOne({
+        _id: vendorVehicleId,
+        vendorId,
+        businessId,
+        status: "Available",
+      });
+
+      if (!vendorVehicle) {
+        return res.status(400).json({
+          success: false,
+          message: "Vendor vehicle not found or not available",
+        });
+      }
+    }
+
+    // =========================================================
+    // VALIDATE EACH LEG
+    // =========================================================
+
+    const processedLegs = [];
+
+    const usedDrivers = new Set();
+
+    for (let i = 0; i < journeyLegs.length; i++) {
+      const leg = journeyLegs[i];
+
+      // -------------------------------------------------------
+      // ROUTE
+      // -------------------------------------------------------
+
+      if (!leg.from || !leg.to) {
+        return res.status(400).json({
+          success: false,
+          message: `From and To are required for Leg ${i + 1}`,
+        });
+      }
+
+      // -------------------------------------------------------
+      // CUSTOMER / BROKER
+      // -------------------------------------------------------
+
+      if (!leg.customerId && !leg.brokerId) {
+        return res.status(400).json({
+          success: false,
+          message: `Either customerId or brokerId is required for Leg ${i + 1}`,
+        });
+      }
+
+      // -------------------------------------------------------
+      // CUSTOMER VALIDATION
+      // -------------------------------------------------------
+
+      if (leg.customerId) {
+        const customer = await Customer.findOne({
+          _id: leg.customerId,
+          businessId,
+          status: "Active",
+        });
+
+        if (!customer) {
+          return res.status(400).json({
+            success: false,
+            message: `Customer not found or inactive for Leg ${i + 1}`,
+          });
+        }
+      }
+
+      // -------------------------------------------------------
+      // BROKER VALIDATION
+      // -------------------------------------------------------
+
+      if (leg.brokerId) {
+        const broker = await Broker.findOne({
+          _id: leg.brokerId,
+          businessId,
+          status: "Active",
+        });
+
+        if (!broker) {
+          return res.status(400).json({
+            success: false,
+            message: `Broker not found or inactive for Leg ${i + 1}`,
+          });
+        }
+      }
+
+      // -------------------------------------------------------
+      // DRIVER 1 VALIDATION
+      // -------------------------------------------------------
+
+      if (!leg.driver1) {
+        return res.status(400).json({
+          success: false,
+          message: `driver1 is required for Leg ${i + 1}`,
+        });
+      }
+
+      const driver1 = await Driver.findOne({
+        _id: leg.driver1,
+        businessId,
+        availableStatus: "Available",
+      });
+
+      if (!driver1) {
+        return res.status(400).json({
+          success: false,
+          message: `Driver 1 not found or unavailable for Leg ${i + 1}`,
+        });
+      }
+
+      // Prevent same driver being assigned to multiple legs
+      if (usedDrivers.has(String(leg.driver1))) {
+        return res.status(400).json({
+          success: false,
+          message: `Driver 1 is already assigned to another leg`,
+        });
+      }
+
+      usedDrivers.add(String(leg.driver1));
+
+      // -------------------------------------------------------
+      // DRIVER 2 VALIDATION
+      // -------------------------------------------------------
+
+      if (leg.driver2) {
+        if (String(leg.driver1) === String(leg.driver2)) {
+          return res.status(400).json({
+            success: false,
+            message: `Driver 1 and Driver 2 cannot be the same for Leg ${i + 1}`,
+          });
+        }
+
+        const driver2 = await Driver.findOne({
+          _id: leg.driver2,
+          businessId,
+          availableStatus: "Available",
+        });
+
+        if (!driver2) {
+          return res.status(400).json({
+            success: false,
+            message: `Driver 2 not found or unavailable for Leg ${i + 1}`,
+          });
+        }
+
+        if (usedDrivers.has(String(leg.driver2))) {
+          return res.status(400).json({
+            success: false,
+            message: `Driver 2 is already assigned to another leg`,
+          });
+        }
+
+        usedDrivers.add(String(leg.driver2));
+      }
+
+      // -------------------------------------------------------
+      // DRIVER SALARY
+      // -------------------------------------------------------
+
+      if (
+        leg.driverSalary !== undefined &&
+        (typeof leg.driverSalary !== "number" || leg.driverSalary < 0)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid driverSalary for Leg ${i + 1}`,
+        });
+      }
+
+      // -------------------------------------------------------
+      // DRIVER ADVANCE
+      // -------------------------------------------------------
+
+      if (leg.driverAdvance !== undefined) {
+        if (!Array.isArray(leg.driverAdvance)) {
+          return res.status(400).json({
+            success: false,
+            message: `driverAdvance must be an array for Leg ${i + 1}`,
+          });
+        }
+
+        for (const advance of leg.driverAdvance) {
+          if (!advance.date || advance.amount === undefined) {
+            return res.status(400).json({
+              success: false,
+              message: `Each driverAdvance entry must contain date and amount for Leg ${i + 1}`,
+            });
+          }
+
+          if (typeof advance.amount !== "number" || advance.amount < 0) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid driverAdvance amount for Leg ${i + 1}`,
+            });
+          }
+        }
+      }
+
+      // =======================================================
+      // BUILD LEG
+      // Backend controls legNo and legStatus
+      // =======================================================
+
+      processedLegs.push({
+        ...leg,
+
+        legNo: i + 1,
+
+        legStatus: "Pre Trip Pending",
       });
     }
+
+    // =========================================================
+    // CREATE TRIP
+    // =========================================================
 
     const trip = await Trip.create({
       businessId,
-      ...req.body,
+
+      fleetSource,
+
+      vehicleId: fleetSource === "Own Fleet" ? vehicleId : undefined,
+
+      vendorId: fleetSource === "Vendor" ? vendorId : undefined,
+
+      vendorVehicleId: fleetSource === "Vendor" ? vendorVehicleId : undefined,
+
+      journeyType,
+
+      currentLeg: 1,
+
+      tripStatus: "Pre Trip Pending",
+
+      journeyLegs: processedLegs,
+
+      totalFuelCost: 0,
+      totalFuelQuantity: 0,
+      totalExpense: 0,
+      profit: 0,
+      distanceTravelled: 0,
     });
 
-    // Vehicle Status
+    // =========================================================
+    // RESERVE VEHICLE
+    // =========================================================
 
-    if (trip.fleetSource === "Own Fleet" && trip.vehicleId) {
-      await Vehicle.findByIdAndUpdate(trip.vehicleId, {
-        status: "Reserved",
-      });
+    if (fleetSource === "Own Fleet") {
+      await Vehicle.findOneAndUpdate(
+        {
+          _id: vehicleId,
+          businessId,
+        },
+        {
+          $set: {
+            status: "Reserved",
+            currentTripId: trip._id,
+          },
+        },
+      );
     }
 
-    // Vendor Vehicle Status
+    // =========================================================
+    // RESERVE VENDOR VEHICLE
+    // =========================================================
 
-    if (trip.fleetSource === "Vendor" && trip.vendorVehicleId) {
-      await VendorVehicle.findByIdAndUpdate(trip.vendorVehicleId, {
-        status: "Reserved",
-      });
+    if (fleetSource === "Vendor") {
+      await VendorVehicle.findOneAndUpdate(
+        {
+          _id: vendorVehicleId,
+          vendorId,
+          businessId,
+        },
+        {
+          $set: {
+            status: "On Trip",
+            currentTripId: trip._id,
+          },
+        },
+      );
     }
 
-    // Driver Status
+    // =========================================================
+    // RESERVE ALL DRIVERS
+    // =========================================================
 
-    if (trip.driver1) {
-      await Driver.findByIdAndUpdate(trip.driver1, {
-        availableStatus: "Reserved",
-        currentTripId: trip._id,
-      });
+    for (const leg of processedLegs) {
+      await Driver.findOneAndUpdate(
+        {
+          _id: leg.driver1,
+          businessId,
+        },
+        {
+          $set: {
+            availableStatus: "Reserved",
+            currentTripId: trip._id,
+          },
+        },
+      );
+
+      if (leg.driver2) {
+        await Driver.findOneAndUpdate(
+          {
+            _id: leg.driver2,
+            businessId,
+          },
+          {
+            $set: {
+              availableStatus: "Reserved",
+              currentTripId: trip._id,
+            },
+          },
+        );
+      }
     }
 
-    if (trip.driver2) {
-      await Driver.findByIdAndUpdate(trip.driver2, {
-        availableStatus: "Reserved",
-        currentTripId: trip._id,
-      });
-    }
+    // =========================================================
+    // RESPONSE
+    // =========================================================
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Trip created successfully",
       data: trip,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("createTrip error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -447,9 +562,11 @@ exports.getTrip = async (req, res) => {
 
 exports.updateTrip = async (req, res) => {
   try {
+    const businessId = req.user.businessId;
+
     const trip = await Trip.findOne({
       _id: req.params.id,
-      businessId: req.user.businessId,
+      businessId,
     });
 
     if (!trip) {
@@ -459,32 +576,427 @@ exports.updateTrip = async (req, res) => {
       });
     }
 
-    if (["In Transit", "Completed", "Closed"].includes(trip.tripStatus)) {
+    // =====================================================
+    // COMPLETED / CLOSED TRIP
+    // =====================================================
+
+    if (["Completed", "Closed"].includes(trip.tripStatus)) {
       return res.status(400).json({
         success: false,
         message: `Cannot update trip in ${trip.tripStatus} status`,
       });
     }
 
+    // =====================================================
+    // ONLY MULTI LEG CAN ADD NEW LEGS
+    // =====================================================
+
+    if (
+      req.body.journeyLegs !== undefined &&
+      trip.journeyType !== "Multi Leg"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "New journey legs can only be added to Multi Leg trips",
+      });
+    }
+
+    // =====================================================
+    // REMOVE NON-EDITABLE TRIP FIELDS
+    // =====================================================
+
     delete req.body.vehicleId;
+    delete req.body.vendorId;
     delete req.body.vendorVehicleId;
     delete req.body.driver1;
     delete req.body.driver2;
     delete req.body.fleetSource;
+
+    // Operational trip fields must NEVER be changed
+    // through updateTrip.
+
     delete req.body.tripStatus;
+    delete req.body.currentLeg;
+    delete req.body.totalFuelCost;
+    delete req.body.totalFuelQuantity;
+    delete req.body.totalFuelEntries;
+    delete req.body.totalExpense;
+    delete req.body.totalExpenseEntries;
+    delete req.body.profit;
+    delete req.body.distanceTravelled;
+    delete req.body.completedAt;
+    delete req.body.closedAt;
+    delete req.body.settlement;
 
-    const updatedTrip = await Trip.findByIdAndUpdate(trip._id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    // =====================================================
+    // ADD DRIVER ADVANCE TO EXISTING LEG
+    // =====================================================
 
-    res.json({
+    if (req.body.legNo !== undefined && req.body.driverAdvance !== undefined) {
+      const legNo = Number(req.body.legNo);
+
+      // Validate leg number
+      if (!Number.isInteger(legNo) || legNo < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid legNo",
+        });
+      }
+
+      // Find existing leg
+      const leg = trip.journeyLegs.find((item) => item.legNo === legNo);
+
+      if (!leg) {
+        return res.status(404).json({
+          success: false,
+          message: `Journey Leg ${legNo} not found`,
+        });
+      }
+
+      // Validate driver advance object
+      const { date, amount } = req.body.driverAdvance;
+
+      if (!date || amount === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: "Driver advance requires date and amount",
+        });
+      }
+
+      if (isNaN(amount) || Number(amount) < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Driver advance amount must be a valid non-negative number",
+        });
+      }
+
+      // Make sure array exists
+      if (!Array.isArray(leg.driverAdvance)) {
+        leg.driverAdvance = [];
+      }
+
+      // ADD new advance entry
+      leg.driverAdvance.push({
+        date: new Date(date),
+        amount: Number(amount),
+      });
+
+      await trip.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Driver advance added successfully to Leg ${legNo}`,
+        data: {
+          tripId: trip._id,
+          tripNo: trip.tripNo,
+          currentLeg: trip.currentLeg,
+          tripStatus: trip.tripStatus,
+          legNo: leg.legNo,
+          driverAdvance: leg.driverAdvance,
+        },
+      });
+    }
+
+    // =====================================================
+    // MULTI LEG - ADD FUTURE LEGS
+    // =====================================================
+    let newJourneyLegs = [];
+    if (req.body.journeyLegs !== undefined) {
+      if (
+        !Array.isArray(req.body.journeyLegs) ||
+        req.body.journeyLegs.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "At least one new journey leg is required",
+        });
+      }
+
+      /*
+       * IMPORTANT:
+       *
+       * We do NOT replace trip.journeyLegs.
+       *
+       * Existing legs remain untouched.
+       *
+       * Only new legs are pushed into the array.
+       */
+
+      let nextLegNo = trip.journeyLegs.length + 1;
+
+      for (const leg of req.body.journeyLegs) {
+        // =================================================
+        // FROM / TO
+        // =================================================
+
+        if (!leg.from || !leg.to) {
+          return res.status(400).json({
+            success: false,
+            message: "Every new journey leg must have From and To",
+          });
+        }
+
+        // =================================================
+        // CUSTOMER / BROKER
+        // =================================================
+
+        if (!leg.customerId && !leg.brokerId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Every new journey leg must have either customerId or brokerId",
+          });
+        }
+
+        // =================================================
+        // CUSTOMER VALIDATION
+        // =================================================
+
+        if (leg.customerId) {
+          const customer = await Customer.findOne({
+            _id: leg.customerId,
+            businessId,
+          });
+
+          if (!customer) {
+            return res.status(404).json({
+              success: false,
+              message: "Journey leg customer not found",
+            });
+          }
+
+          if (customer.status !== "Active") {
+            return res.status(400).json({
+              success: false,
+              message: "Journey leg customer is inactive",
+            });
+          }
+        }
+
+        // =================================================
+        // BROKER VALIDATION
+        // =================================================
+
+        if (leg.brokerId) {
+          const broker = await Broker.findOne({
+            _id: leg.brokerId,
+            businessId,
+          });
+
+          if (!broker) {
+            return res.status(404).json({
+              success: false,
+              message: "Journey leg broker not found",
+            });
+          }
+
+          if (broker.status && broker.status !== "Active") {
+            return res.status(400).json({
+              success: false,
+              message: "Journey leg broker is inactive",
+            });
+          }
+        }
+
+        // =================================================
+        // DRIVER VALIDATION
+        // =================================================
+
+        if (!leg.driver1) {
+          return res.status(400).json({
+            success: false,
+            message: "Primary driver is required for every new journey leg",
+          });
+        }
+
+        const driver1 = await Driver.findOne({
+          _id: leg.driver1,
+          businessId,
+        });
+
+        if (!driver1) {
+          return res.status(404).json({
+            success: false,
+            message: "Primary driver not found",
+          });
+        }
+
+        /*
+         * A future leg is not allowed to use a driver who
+         * is currently operating another trip.
+         *
+         * If Leg 1 is currently In Transit, its driver will
+         * normally be On Trip, so the same driver cannot be
+         * allocated to Leg 2 at this point.
+         */
+        if (driver1.availableStatus !== "Available") {
+          return res.status(400).json({
+            success: false,
+            message: `Primary driver currently ${driver1.availableStatus}`,
+          });
+        }
+
+        // =================================================
+        // DRIVER 2 VALIDATION
+        // =================================================
+
+        if (leg.driver2) {
+          if (leg.driver2.toString() === leg.driver1.toString()) {
+            return res.status(400).json({
+              success: false,
+              message: "Driver 1 and Driver 2 cannot be the same",
+            });
+          }
+
+          const driver2 = await Driver.findOne({
+            _id: leg.driver2,
+            businessId,
+          });
+
+          if (!driver2) {
+            return res.status(404).json({
+              success: false,
+              message: "Second driver not found",
+            });
+          }
+
+          if (driver2.availableStatus !== "Available") {
+            return res.status(400).json({
+              success: false,
+              message: `Second driver currently ${driver2.availableStatus}`,
+            });
+          }
+        }
+
+        // =================================================
+        // DRIVER SALARY
+        // =================================================
+
+        if (
+          leg.driverSalary !== undefined &&
+          (isNaN(leg.driverSalary) || Number(leg.driverSalary) < 0)
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Driver salary must be a valid positive amount",
+          });
+        }
+
+        // =================================================
+        // DRIVER ADVANCE
+        // =================================================
+
+        if (leg.driverAdvance !== undefined) {
+          if (!Array.isArray(leg.driverAdvance)) {
+            return res.status(400).json({
+              success: false,
+              message: "driverAdvance must be an array",
+            });
+          }
+
+          for (const advance of leg.driverAdvance) {
+            if (!advance.date || advance.amount === undefined) {
+              return res.status(400).json({
+                success: false,
+                message: "Each driver advance must have date and amount",
+              });
+            }
+
+            if (Number(advance.amount) < 0) {
+              return res.status(400).json({
+                success: false,
+                message: "Driver advance amount cannot be negative",
+              });
+            }
+          }
+        }
+
+        // =================================================
+        // CREATE NEW LEG
+        // =================================================
+
+        newJourneyLegs.push({
+          ...leg,
+
+          // Backend-owned fields
+          legNo: nextLegNo,
+          legStatus: "Pre Trip Pending",
+
+          // Do not allow client to initialize operational data
+          pickupReachedAt: undefined,
+          startTime: undefined,
+          startOdometer: undefined,
+          endTime: undefined,
+          arrivalTime: undefined,
+          arrivalOdometer: undefined,
+          arrivalRemarks: undefined,
+          completedAt: undefined,
+        });
+
+        nextLegNo++;
+      }
+
+      // =================================================
+      // ADD ONLY NEW LEGS
+      // =================================================
+
+      trip.journeyLegs.push(...newJourneyLegs);
+
+      await trip.save();
+
+      // Remove journeyLegs so it is NOT processed again
+      delete req.body.journeyLegs;
+    }
+
+    // =====================================================
+    // UPDATE OTHER NON-OPERATIONAL TRIP FIELDS
+    // =====================================================
+
+    const allowedTripFields = [
+      // Add only fields that you genuinely want editable
+      // after trip creation.
+    ];
+
+    const updateData = {};
+
+    for (const field of allowedTripFields) {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    }
+
+    let updatedTrip = trip;
+
+    if (Object.keys(updateData).length > 0) {
+      updatedTrip = await Trip.findOneAndUpdate(
+        {
+          _id: trip._id,
+          businessId,
+        },
+        updateData,
+        {
+          new: true,
+          runValidators: true,
+        },
+      );
+    }
+
+    // =====================================================
+    // RESPONSE
+    // =====================================================
+
+    return res.status(200).json({
       success: true,
-      message: "Trip updated successfully",
+      message:
+        newJourneyLegs.length > 0
+          ? "New journey leg(s) added successfully"
+          : "Trip updated successfully",
       data: updatedTrip,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("updateTrip error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -563,6 +1075,10 @@ exports.reachedPickup = async (req, res) => {
     const businessId = req.driver.businessId;
     const { tripId } = req.params;
 
+    // =========================================================
+    // FIND TRIP
+    // =========================================================
+
     const trip = await Trip.findOne({
       _id: tripId,
       businessId,
@@ -575,6 +1091,25 @@ exports.reachedPickup = async (req, res) => {
       });
     }
 
+    // =========================================================
+    // GET CURRENT LEG
+    // =========================================================
+
+    const currentLegIndex = trip.currentLeg - 1;
+
+    const currentLeg = trip.journeyLegs[currentLegIndex];
+
+    if (!currentLeg) {
+      return res.status(400).json({
+        success: false,
+        message: `Current leg ${trip.currentLeg} not found`,
+      });
+    }
+
+    // =========================================================
+    // TRIP STATUS CHECK
+    // =========================================================
+
     if (trip.tripStatus !== "Ready For Loading") {
       return res.status(400).json({
         success: false,
@@ -582,19 +1117,39 @@ exports.reachedPickup = async (req, res) => {
       });
     }
 
-    trip.tripStatus = "Reached Pickup";
+    // =========================================================
+    // CURRENT LEG STATUS CHECK
+    // =========================================================
 
-    trip.pickupReachedAt = new Date();
+    if (currentLeg.legStatus !== "Ready For Loading") {
+      return res.status(400).json({
+        success: false,
+        message: `Leg ${currentLeg.legNo} currently ${currentLeg.legStatus}`,
+      });
+    }
+
+    // =========================================================
+    // UPDATE CURRENT LEG
+    // =========================================================
+
+    currentLeg.legStatus = "Reached Pickup";
+
+    currentLeg.pickupReachedAt = new Date();
+
+    // UPDATE TRIP STATUS
+    trip.tripStatus = "Reached Pickup";
 
     await trip.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Vehicle reached pickup location",
+      message: `Vehicle reached pickup for Leg ${currentLeg.legNo}`,
       data: trip,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("reachedPickup error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -620,12 +1175,103 @@ exports.completeLoading = async (req, res) => {
       });
     }
 
+    // =====================================================
+    // MULTI LEG
+    // =====================================================
+
+    if (trip.journeyType === "Multi Leg") {
+      const currentLegIndex = trip.currentLeg - 1;
+
+      const currentLeg = trip.journeyLegs[currentLegIndex];
+
+      if (!currentLeg) {
+        return res.status(400).json({
+          success: false,
+          message: `Current leg ${trip.currentLeg} not found`,
+        });
+      }
+
+      // =========================
+      // TRIP STATUS CHECK
+      // =========================
+
+      if (trip.tripStatus !== "Reached Pickup") {
+        return res.status(400).json({
+          success: false,
+          message: `Trip currently ${trip.tripStatus}`,
+        });
+      }
+
+      // =========================
+      // LEG STATUS CHECK
+      // =========================
+
+      if (currentLeg.legStatus !== "Reached Pickup") {
+        return res.status(400).json({
+          success: false,
+          message: `Leg ${currentLeg.legNo} currently ${currentLeg.legStatus}`,
+        });
+      }
+
+      // =========================
+      // LOADING VALIDATION
+      // =========================
+
+      if (!req.body.loadingStartTime || !req.body.loadingEndTime) {
+        return res.status(400).json({
+          success: false,
+          message: "Loading start time and loading end time are required",
+        });
+      }
+
+      // =========================
+      // UPDATE CURRENT LEG LOADING
+      // =========================
+
+      currentLeg.loading = {
+        loadingStartTime: req.body.loadingStartTime,
+        loadingEndTime: req.body.loadingEndTime,
+        loadedWeight: req.body.loadedWeight,
+        loadedBy: req.body.loadedBy,
+        remarks: req.body.remarks,
+        status: "Completed",
+      };
+
+      // =========================
+      // UPDATE LEG STATUS
+      // =========================
+
+      currentLeg.legStatus = "Documents Pending";
+
+      // =========================
+      // UPDATE TRIP STATUS
+      // =========================
+
+      trip.tripStatus = "Documents Pending";
+
+      await trip.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Loading completed successfully for Leg ${currentLeg.legNo}`,
+        data: trip,
+      });
+    }
+
+    // =====================================================
+    // NON MULTI LEG
+    // =====================================================
+
     if (trip.tripStatus !== "Reached Pickup") {
       return res.status(400).json({
         success: false,
         message: `Trip currently ${trip.tripStatus}`,
       });
     }
+
+    // =========================
+    // GLOBAL LOADING
+    // =========================
 
     trip.loading = {
       loadingStartTime: req.body.loadingStartTime,
@@ -640,7 +1286,7 @@ exports.completeLoading = async (req, res) => {
 
     await trip.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Loading completed successfully",
       data: trip,
@@ -657,9 +1303,13 @@ exports.completeLoading = async (req, res) => {
 exports.startTrip = async (req, res) => {
   try {
     const businessId = req.driver.businessId;
+    const driverId = req.driver.driverId;
+
+    const { tripId } = req.params;
+    const { startOdometer } = req.body;
 
     const trip = await Trip.findOne({
-      _id: req.params.tripId,
+      _id: tripId,
       businessId,
     });
 
@@ -671,6 +1321,20 @@ exports.startTrip = async (req, res) => {
     }
 
     // =====================================
+    // CURRENT LEG
+    // =====================================
+
+    const currentLegIndex = trip.currentLeg - 1;
+    const currentLeg = trip.journeyLegs[currentLegIndex];
+
+    if (!currentLeg) {
+      return res.status(400).json({
+        success: false,
+        message: `Current leg ${trip.currentLeg} not found`,
+      });
+    }
+
+    // =====================================
     // TRIP STATUS
     // =====================================
 
@@ -678,6 +1342,17 @@ exports.startTrip = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Trip currently ${trip.tripStatus}`,
+      });
+    }
+
+    // =====================================
+    // CURRENT LEG STATUS
+    // =====================================
+
+    if (currentLeg.legStatus !== "Ready To Start") {
+      return res.status(400).json({
+        success: false,
+        message: `Leg ${currentLeg.legNo} currently ${currentLeg.legStatus}`,
       });
     }
 
@@ -697,6 +1372,24 @@ exports.startTrip = async (req, res) => {
         message: "Pre-trip inspection has not been completed",
       });
     }
+
+    // =====================================
+    // START ODOMETER
+    // =====================================
+
+    // if (startOdometer === undefined || startOdometer === null) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Start odometer reading is required",
+    //   });
+    // }
+
+    // if (Number(startOdometer) < 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Start odometer cannot be negative",
+    //   });
+    // }
 
     // =====================================
     // VEHICLE
@@ -740,6 +1433,12 @@ exports.startTrip = async (req, res) => {
         });
       }
 
+      // Current VendorVehicle enum is:
+      // Available, On Trip, Inactive
+      //
+      // If you have added "Reserved" to the schema,
+      // change this check to Reserved.
+
       if (vendorVehicle.status !== "Reserved") {
         return res.status(400).json({
           success: false,
@@ -753,7 +1452,7 @@ exports.startTrip = async (req, res) => {
     // =====================================
 
     const driver1 = await Driver.findOne({
-      _id: trip.driver1,
+      _id: currentLeg.driver1,
       businessId,
     });
 
@@ -777,9 +1476,9 @@ exports.startTrip = async (req, res) => {
 
     let driver2 = null;
 
-    if (trip.driver2) {
+    if (currentLeg.driver2) {
       driver2 = await Driver.findOne({
-        _id: trip.driver2,
+        _id: currentLeg.driver2,
         businessId,
       });
 
@@ -799,31 +1498,34 @@ exports.startTrip = async (req, res) => {
     }
 
     // =====================================
-    // JOURNEY LEGS
+    // VERIFY REQUEST DRIVER
     // =====================================
 
-    if (!trip.journeyLegs || trip.journeyLegs.length === 0) {
-      return res.status(400).json({
+    const isAssignedDriver =
+      currentLeg.driver1?.toString() === driverId.toString() ||
+      currentLeg.driver2?.toString() === driverId.toString();
+
+    if (!isAssignedDriver) {
+      return res.status(403).json({
         success: false,
-        message: "Journey legs not found",
+        message:
+          "Only the assigned driver of the current leg can start the trip",
       });
     }
 
-    // Only first leg starts
-    trip.journeyLegs[0].status = "In Progress";
+    // =====================================
+    // UPDATE CURRENT LEG
+    // =====================================
+
+    currentLeg.startTime = new Date();
+    currentLeg.startOdometer = Number(startOdometer);
+    currentLeg.legStatus = "In Transit";
 
     // =====================================
-    // TRIP
+    // UPDATE TRIP
     // =====================================
 
     trip.tripStatus = "In Transit";
-
-    trip.startTime = new Date();
-
-    // Start with first journey leg
-    trip.currentLeg = 1;
-    trip.journeyLegs[0].status = "In Progress";
-    trip.startOdometer = req.body.startOdometer;
 
     await trip.save();
 
@@ -832,38 +1534,74 @@ exports.startTrip = async (req, res) => {
     // =====================================
 
     if (trip.fleetSource === "Own Fleet") {
-      await Vehicle.findByIdAndUpdate(trip.vehicleId, {
-        status: "On Trip",
-      });
+      await Vehicle.findOneAndUpdate(
+        {
+          _id: trip.vehicleId,
+          businessId,
+        },
+        {
+          status: "On Trip",
+        },
+      );
     }
 
     if (trip.fleetSource === "Vendor") {
-      await VendorVehicle.findByIdAndUpdate(trip.vendorVehicleId, {
-        status: "On Trip",
-      });
+      await VendorVehicle.findOneAndUpdate(
+        {
+          _id: trip.vendorVehicleId,
+          businessId,
+        },
+        {
+          status: "On Trip",
+        },
+      );
     }
 
     // =====================================
     // DRIVER STATUS
     // =====================================
 
-    await Driver.findByIdAndUpdate(trip.driver1, {
-      availableStatus: "On Trip",
-    });
-
-    if (trip.driver2) {
-      await Driver.findByIdAndUpdate(trip.driver2, {
+    await Driver.findOneAndUpdate(
+      {
+        _id: currentLeg.driver1,
+        businessId,
+      },
+      {
         availableStatus: "On Trip",
-      });
+      },
+    );
+
+    if (currentLeg.driver2) {
+      await Driver.findOneAndUpdate(
+        {
+          _id: currentLeg.driver2,
+          businessId,
+        },
+        {
+          availableStatus: "On Trip",
+        },
+      );
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Trip started successfully",
-      data: trip,
+      message: `Trip started successfully for Leg ${currentLeg.legNo}`,
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        currentLeg: trip.currentLeg,
+        tripStatus: trip.tripStatus,
+        legStatus: currentLeg.legStatus,
+        startTime: currentLeg.startTime,
+        startOdometer: currentLeg.startOdometer,
+        driver1: currentLeg.driver1,
+        driver2: currentLeg.driver2,
+      },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("startTrip error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -877,6 +1615,9 @@ exports.arriveDestination = async (req, res) => {
 
     const { arrivalOdometer, remarks } = req.body;
 
+    // -------------------------------------------------
+    // FIND TRIP
+    // -------------------------------------------------
     const trip = await Trip.findOne({
       _id: req.params.tripId,
       businessId,
@@ -889,6 +1630,9 @@ exports.arriveDestination = async (req, res) => {
       });
     }
 
+    // -------------------------------------------------
+    // TRIP STATUS VALIDATION
+    // -------------------------------------------------
     if (trip.tripStatus !== "In Transit") {
       return res.status(400).json({
         success: false,
@@ -896,43 +1640,86 @@ exports.arriveDestination = async (req, res) => {
       });
     }
 
+    // -------------------------------------------------
+    // GET CURRENT LEG
+    // -------------------------------------------------
     const currentLegIndex = trip.currentLeg - 1;
+    const currentLeg = trip.journeyLegs[currentLegIndex];
 
-    if (!trip.journeyLegs[currentLegIndex]) {
+    if (!currentLeg) {
       return res.status(400).json({
         success: false,
         message: "Invalid current leg",
       });
     }
 
-    if (trip.journeyLegs[currentLegIndex].status !== "In Progress") {
+    // -------------------------------------------------
+    // CURRENT LEG STATUS VALIDATION
+    // -------------------------------------------------
+    if (currentLeg.legStatus !== "In Transit") {
       return res.status(400).json({
         success: false,
-        message: "Current leg is not in progress",
+        message: `Current leg currently ${currentLeg.legStatus}`,
       });
     }
 
-    trip.arrivalTime = new Date();
-
-    trip.arrivalOdometer = arrivalOdometer;
-
-    trip.tripStatus = "Unloading";
-
-    trip.journeyLegs[currentLegIndex].status = "Arrived";
-
-    if (remarks) {
-      trip.arrivalRemarks = remarks;
+    // -------------------------------------------------
+    // ARRIVAL ODOMETER VALIDATION
+    // -------------------------------------------------
+    if (
+      arrivalOdometer === undefined ||
+      arrivalOdometer === null ||
+      isNaN(arrivalOdometer) ||
+      Number(arrivalOdometer) < 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid arrivalOdometer is required",
+      });
     }
+
+    // -------------------------------------------------
+    // UPDATE CURRENT LEG
+    // -------------------------------------------------
+    currentLeg.arrivalTime = new Date();
+
+    currentLeg.arrivalOdometer = Number(arrivalOdometer);
+
+    if (remarks !== undefined) {
+      currentLeg.arrivalRemarks = remarks;
+    }
+
+    currentLeg.legStatus = "Unloading";
+
+    // -------------------------------------------------
+    // UPDATE TRIP STATUS
+    // -------------------------------------------------
+    trip.tripStatus = "Unloading";
 
     await trip.save();
 
-    res.status(200).json({
+    // -------------------------------------------------
+    // RESPONSE
+    // -------------------------------------------------
+    return res.status(200).json({
       success: true,
-      message: "Vehicle arrived at destination",
-      data: trip,
+      message: `Vehicle arrived at destination for Leg ${currentLeg.legNo}`,
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        currentLeg: trip.currentLeg,
+        tripStatus: trip.tripStatus,
+        legNo: currentLeg.legNo,
+        legStatus: currentLeg.legStatus,
+        arrivalTime: currentLeg.arrivalTime,
+        arrivalOdometer: currentLeg.arrivalOdometer,
+        arrivalRemarks: currentLeg.arrivalRemarks,
+      },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("arriveDestination error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -940,11 +1727,28 @@ exports.arriveDestination = async (req, res) => {
 };
 
 // Complete Unloading
+// =====================================================
+// COMPLETE UNLOADING
+// Current Leg: Unloading → Delivery OTP Pending
+// OR
+// Multi Leg: Current Leg Completed → Next Leg Pre Trip Pending
+// =====================================================
+
 exports.completeUnloading = async (req, res) => {
   try {
     const businessId = req.driver.businessId;
     const { tripId } = req.params;
 
+    const {
+      unloadingBy,
+      receiverName,
+      receiverMobile,
+      remarks,
+    } = req.body;
+
+    // -------------------------------------------------
+    // FIND TRIP
+    // -------------------------------------------------
     const trip = await Trip.findOne({
       _id: tripId,
       businessId,
@@ -957,6 +1761,9 @@ exports.completeUnloading = async (req, res) => {
       });
     }
 
+    // -------------------------------------------------
+    // TRIP STATUS VALIDATION
+    // -------------------------------------------------
     if (trip.tripStatus !== "Unloading") {
       return res.status(400).json({
         success: false,
@@ -964,111 +1771,181 @@ exports.completeUnloading = async (req, res) => {
       });
     }
 
-    const currentLeg = trip.currentLeg;
-
-    const leg = trip.journeyLegs.find((x) => x.legNo === currentLeg);
+    // -------------------------------------------------
+    // GET CURRENT LEG
+    // -------------------------------------------------
+    const currentLegIndex = trip.currentLeg - 1;
+    const leg = trip.journeyLegs[currentLegIndex];
 
     if (!leg) {
       return res.status(404).json({
         success: false,
-        message: "Journey leg not found",
+        message: "Current journey leg not found",
       });
     }
 
-    // Complete current leg
+    // -------------------------------------------------
+    // CURRENT LEG STATUS VALIDATION
+    // -------------------------------------------------
+    if (leg.legStatus !== "Unloading") {
+      return res.status(400).json({
+        success: false,
+        message: `Current leg currently ${leg.legStatus}`,
+      });
+    }
 
-    leg.status = "Completed";
 
-    trip.unloading = {
+    // -------------------------------------------------
+    // COMPLETE UNLOADING OF CURRENT LEG
+    // -------------------------------------------------
+    leg.unloading = {
       status: "Completed",
       completedAt: new Date(),
-      odometer: req.body.odometer,
-      unloadingBy: req.body.unloadingBy,
-      receiverName: req.body.receiverName,
-      receiverMobile: req.body.receiverMobile,
-      remarks: req.body.remarks,
+      unloadingBy,
+      remarks,
     };
+
+    // -------------------------------------------------
+    // CURRENT LEG DISTANCE
+    // Start → Arrival
+    // -------------------------------------------------
+    if (
+      leg.arrivalOdometer !== undefined
+    ) {
+      leg.distanceTravelled =
+        Number(leg.arrivalOdometer) 
+    }
+
+    // -------------------------------------------------
+    // COMPLETE CURRENT LEG
+    // -------------------------------------------------
+    leg.legStatus = "Completed";
+    leg.completedAt = new Date();
+
+
+    // =================================================
+    // RELEASE CURRENT LEG DRIVER 1
+    // =================================================
+
+    if (leg.driver1) {
+      await Driver.findOneAndUpdate(
+        {
+          _id: leg.driver1,
+          businessId,
+          currentTripId: trip._id,
+        },
+        {
+          $set: {
+            availableStatus: "Available",
+          },
+          $unset: {
+            currentTripId: 1,
+          },
+        }
+      );
+    }
+
+    // =================================================
+    // RELEASE CURRENT LEG DRIVER 2
+    // =================================================
+
+    if (leg.driver2) {
+      await Driver.findOneAndUpdate(
+        {
+          _id: leg.driver2,
+          businessId,
+          currentTripId: trip._id,
+        },
+        {
+          $set: {
+            availableStatus: "Available",
+          },
+          $unset: {
+            currentTripId: 1,
+          },
+        }
+      );
+    }
 
     const totalLegs = trip.journeyLegs.length;
 
-    if (currentLeg < totalLegs) {
-      // Move to next leg
+    // =================================================
+    // MORE LEGS AVAILABLE
+    // =================================================
 
-      trip.currentLeg = currentLeg + 1;
+    if (trip.currentLeg < totalLegs) {
+      trip.currentLeg = trip.currentLeg + 1;
 
-      trip.tripStatus = "Loading";
+      const nextLegIndex = trip.currentLeg - 1;
+      const nextLeg = trip.journeyLegs[nextLegIndex];
 
-      trip.loading = {
-        status: "Pending",
-      };
-    } else {
-      // Generate Delivery OTP
+      if (!nextLeg) {
+        return res.status(400).json({
+          success: false,
+          message: "Next journey leg not found",
+        });
+      }
 
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      // ------------------------------------------------
+      // NEXT LEG STARTS FROM PRE TRIP PENDING
+      // ------------------------------------------------
+      nextLeg.legStatus = "Pre Trip Pending";
 
-      trip.deliveryOtp = otp;
-
-      trip.deliveryOtpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-
-      trip.deliveryOtpVerified = false;
-
-      trip.tripStatus = "Delivery OTP Pending";
+      trip.tripStatus = "Pre Trip Pending";
     }
 
-    // // total fuel quantity
-    // const fuelEntries = await Fuel.find({
-    //   businessId,
-    //   tripId: trip._id,
-    // });
+    // =================================================
+    // FINAL LEG COMPLETED
+    // =================================================
 
-    // trip.totalFuelQuantity = fuelEntries.reduce(
-    //   (sum, fuel) => sum + fuel.quantity,
-    //   0,
-    // );
+    else {
+      trip.tripStatus = "Completed";
+      trip.completedAt = new Date();
+    }
 
-    // trip.totalFuelEntries = fuelEntries.length;
-
-    // // totalExpense
-    // const expenseEntries = await TripExpense.find({
-    //   businessId,
-    //   tripId: trip._id,
-    // });
-
-    // trip.totalExpense = expenseEntries.reduce(
-    //   (sum, expense) => sum + expense.amount,
-    //   0,
-    // );
-
-    // trip.totalExpenseEntries = expenseEntries.length;
-
-    // //profit
-    // trip.profit =
-    //   trip.freightAmount -
-    //   (trip.driverAdvance +
-    //     trip.dieselAmount +
-    //     trip.tollAmount +
-    //     trip.loadingAmount +
-    //     trip.unloadingAmount +
-    //     trip.commissionAmount +
-    //     trip.miscAmount +
-    //     trip.totalFuelCost +
-    //     trip.totalExpense);
-
-    // distanceTravelled
-    trip.distanceTravelled = trip.arrivalOdometer - trip.startOdometer;
-
+    // -------------------------------------------------
+    // SAVE TRIP
+    // -------------------------------------------------
     await trip.save();
 
-    res.status(200).json({
+    // -------------------------------------------------
+    // RESPONSE
+    // -------------------------------------------------
+    return res.status(200).json({
       success: true,
       message:
-        currentLeg < totalLegs
-          ? "Unloading completed. Ready for next leg."
-          : "Unloading completed. Delivery OTP sent to customer.",
-      data: trip,
+        trip.currentLeg < totalLegs
+          ? `Unloading completed for Leg ${leg.legNo}. Ready for Leg ${trip.currentLeg}.`
+          : "Unloading completed.",
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        currentLeg: trip.currentLeg,
+        tripStatus: trip.tripStatus,
+
+        completedLeg: {
+          legNo: leg.legNo,
+          legStatus: leg.legStatus,
+          unloading: leg.unloading,
+          distanceTravelled: leg.distanceTravelled,
+          completedAt: leg.completedAt,
+        },
+
+        nextLeg:
+          trip.currentLeg < totalLegs
+            ? {
+                legNo: trip.currentLeg,
+                legStatus:
+                  trip.journeyLegs[trip.currentLeg - 1]
+                    .legStatus,
+              }
+            : null,
+      },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("completeUnloading error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -1224,9 +2101,13 @@ exports.resendDeliveryOtp = async (req, res) => {
 exports.closeTrip = async (req, res) => {
   try {
     const businessId = req.user.businessId;
+    const { tripId } = req.params;
 
+    // -------------------------------------------------
+    // FIND TRIP
+    // -------------------------------------------------
     const trip = await Trip.findOne({
-      _id: req.params.tripId,
+      _id: tripId,
       businessId,
     });
 
@@ -1237,10 +2118,9 @@ exports.closeTrip = async (req, res) => {
       });
     }
 
-    // ============================
-    // Trip must be Completed
-    // ============================
-
+    // -------------------------------------------------
+    // TRIP MUST BE COMPLETED
+    // -------------------------------------------------
     if (trip.tripStatus !== "Completed") {
       return res.status(400).json({
         success: false,
@@ -1248,25 +2128,24 @@ exports.closeTrip = async (req, res) => {
       });
     }
 
-    // ============================
-    // All Journey Legs Completed
-    // ============================
-
+    // -------------------------------------------------
+    // ALL JOURNEY LEGS MUST BE COMPLETED
+    // -------------------------------------------------
     const pendingLeg = trip.journeyLegs.find(
-      (leg) => leg.status !== "Completed",
+      (leg) => leg.legStatus !== "Completed"
     );
 
     if (pendingLeg) {
       return res.status(400).json({
         success: false,
-        message: "All journey legs must be completed",
+        message:
+          `Journey Leg ${pendingLeg.legNo} is not completed`,
       });
     }
 
-    // ============================
-    // Post Trip Inspection
-    // ============================
-
+    // -------------------------------------------------
+    // POST TRIP INSPECTION
+    // -------------------------------------------------
     const inspection = await PostTripInspection.findOne({
       tripId: trip._id,
       businessId,
@@ -1279,100 +2158,141 @@ exports.closeTrip = async (req, res) => {
       });
     }
 
-    // ============================
-    // Driver Settlement
-    // ============================
-
-    if (!trip.settlement || trip.settlement.status !== "Settled") {
+    // -------------------------------------------------
+    // POST TRIP INSPECTION MUST BE PASSED
+    // -------------------------------------------------
+    if (inspection.inspectionStatus !== "Passed") {
       return res.status(400).json({
         success: false,
         message:
-          "Driver settlement is pending. Please settle the trip before closing.",
+          "Post Trip Inspection must be passed before closing the trip",
       });
     }
 
-    // ============================
-    // Close Trip
-    // ============================
+    // =================================================
+    // CLOSE TRIP
+    // =================================================
 
     trip.tripStatus = "Closed";
     trip.closedAt = new Date();
 
     await trip.save();
 
-    // ============================
-    // Vehicle Available
-    // ============================
+    // =================================================
+    // VEHICLE AVAILABLE
+    // =================================================
 
     if (trip.fleetSource === "Own Fleet" && trip.vehicleId) {
-      await Vehicle.findByIdAndUpdate(trip.vehicleId, {
-        status: "Available",
-      });
+      await Vehicle.findOneAndUpdate(
+        {
+          _id: trip.vehicleId,
+          businessId,
+        },
+        {
+          $set: {
+            status: "Available",
+          },
+          $unset: {
+            currentTripId: 1,
+          },
+        }
+      );
     }
 
-    // ============================
-    // Vendor Vehicle Available
-    // ============================
+    // =================================================
+    // VENDOR VEHICLE AVAILABLE
+    // =================================================
 
     if (trip.fleetSource === "Vendor" && trip.vendorVehicleId) {
-      await VendorVehicle.findByIdAndUpdate(trip.vendorVehicleId, {
-        status: "Available",
-      });
-    }
-
-    // ============================
-    // Driver 1 Available
-    // ============================
-
-    if (trip.driver1) {
-      await Driver.findByIdAndUpdate(trip.driver1, {
-        availableStatus: "Available",
-        currentTripId: null,
-      });
-    }
-
-    // ============================
-    // Driver 2 Available
-    // ============================
-
-    if (trip.driver2) {
-      await Driver.findByIdAndUpdate(trip.driver2, {
-        availableStatus: "Available",
-        currentTripId: null,
-      });
-    }
-
-    // ============================
-    // Customer Dashboard
-    // ============================
-
-    await Customer.findByIdAndUpdate(trip.customerId, {
-      $inc: {
-        totalTrips: 1,
-        totalRevenue: trip.freightAmount || 0,
-      },
-    });
-
-    // ============================
-    // Broker Dashboard
-    // ============================
-
-    if (trip.brokerId) {
-      await Broker.findByIdAndUpdate(trip.brokerId, {
-        $inc: {
-          totalTrips: 1,
-          totalCommission: trip.commissionAmount || 0,
+      await VendorVehicle.findOneAndUpdate(
+        {
+          _id: trip.vendorVehicleId,
         },
-      });
+        {
+          $set: {
+            status: "Available",
+          },
+          $unset: {
+            currentTripId: 1,
+          },
+        }
+      );
     }
 
-    res.status(200).json({
+    // =================================================
+    // CUSTOMER DASHBOARD
+    // =================================================
+    //
+    // Customer is now stored per journey leg.
+    // A trip may contain multiple customer legs.
+    //
+    // Update each customer's dashboard based on
+    // the freight amount of that leg.
+    // =================================================
+
+    for (const leg of trip.journeyLegs) {
+      if (leg.customerId) {
+        await Customer.findOneAndUpdate(
+          {
+            _id: leg.customerId,
+            businessId,
+          },
+          {
+            $inc: {
+              totalTrips: 1,
+              totalRevenue: leg.estimatedFreightAmount || 0,
+            },
+          }
+        );
+      }
+    }
+
+    // =================================================
+    // BROKER DASHBOARD
+    // =================================================
+    //
+    // Broker is also stored per journey leg.
+    //
+    // Only legs coming through a broker are updated.
+    // =================================================
+
+    for (const leg of trip.journeyLegs) {
+      if (leg.brokerId) {
+        await Broker.findOneAndUpdate(
+          {
+            _id: leg.brokerId,
+            businessId,
+          },
+          {
+            $inc: {
+              totalTrips: 1,
+              totalCommission: leg.commissionAmount || 0,
+            },
+          }
+        );
+      }
+    }
+
+    // =================================================
+    // RESPONSE
+    // =================================================
+
+    return res.status(200).json({
       success: true,
       message: "Trip closed successfully",
-      data: trip,
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        tripStatus: trip.tripStatus,
+        completedAt: trip.completedAt,
+        closedAt: trip.closedAt,
+        totalLegs: trip.journeyLegs.length,
+      },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("closeTrip error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -1819,15 +2739,9 @@ exports.completeWeighbridge = async (req, res) => {
       remarks,
     } = req.body;
 
-    // Required field validation
-
-    // if (!grossWeight || !ticketNumber || !weighbridgeName || !weighbridgeFee) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message:
-    //       "Gross weight, ticket number, weighbridge name and weighbridge fee are required",
-    //   });
-    // }
+    // =========================================================
+    // FIND TRIP
+    // =========================================================
 
     const trip = await Trip.findOne({
       _id: tripId,
@@ -1841,6 +2755,25 @@ exports.completeWeighbridge = async (req, res) => {
       });
     }
 
+    // =========================================================
+    // GET CURRENT LEG
+    // =========================================================
+
+    const currentLegIndex = trip.currentLeg - 1;
+
+    const currentLeg = trip.journeyLegs[currentLegIndex];
+
+    if (!currentLeg) {
+      return res.status(400).json({
+        success: false,
+        message: `Current leg ${trip.currentLeg} not found`,
+      });
+    }
+
+    // =========================================================
+    // TRIP STATUS CHECK
+    // =========================================================
+
     if (trip.tripStatus !== "Documents Pending") {
       return res.status(400).json({
         success: false,
@@ -1848,25 +2781,50 @@ exports.completeWeighbridge = async (req, res) => {
       });
     }
 
-    // prevent duplicate entries
-    if (trip.weighbridge?.status === "Completed") {
+    // =========================================================
+    // CURRENT LEG STATUS CHECK
+    // =========================================================
+
+    if (currentLeg.legStatus !== "Documents Pending") {
       return res.status(400).json({
         success: false,
-        message: "Weighbridge details already submitted",
+        message: `Leg ${currentLeg.legNo} currently ${currentLeg.legStatus}`,
       });
     }
 
-    // Validate assigned driver
+    // =========================================================
+    // PREVENT DUPLICATE WEIGHBRIDGE
+    // =========================================================
+
     if (
-      trip.driver1?.toString() !== driverId &&
-      trip.driver2?.toString() !== driverId
+      currentLeg.weighbridge &&
+      currentLeg.weighbridge.status === "Completed"
     ) {
+      return res.status(400).json({
+        success: false,
+        message: `Weighbridge details already submitted for Leg ${currentLeg.legNo}`,
+      });
+    }
+
+    // =========================================================
+    // DRIVER VALIDATION
+    // =========================================================
+
+    const isDriverAssigned =
+      currentLeg.driver1?.toString() === driverId.toString() ||
+      currentLeg.driver2?.toString() === driverId.toString();
+
+    if (!isDriverAssigned) {
       return res.status(403).json({
         success: false,
         message:
-          "Only the assigned driver can complete the weighbridge process",
+          "Only the assigned driver of the current leg can complete the weighbridge process",
       });
     }
+
+    // =========================================================
+    // RECEIPT VALIDATION
+    // =========================================================
 
     if (!req.file) {
       return res.status(400).json({
@@ -1875,36 +2833,79 @@ exports.completeWeighbridge = async (req, res) => {
       });
     }
 
-    // Upload receipt to GCS under trip folder
+    // =========================================================
+    // UPLOAD WEIGHBRIDGE RECEIPT
+    // =========================================================
+
     const receiptPath = await uploadFile(
       req.file,
       businessId,
-      `trip-documents/${tripId}/weighbridge`,
+      `trip-documents/${tripId}/leg-${currentLeg.legNo}/weighbridge`,
     );
 
-    trip.weighbridge = {
+    // =========================================================
+    // SAVE WEIGHBRIDGE TO CURRENT LEG
+    // =========================================================
+
+    currentLeg.weighbridge = {
       status: "Completed",
+
       grossWeight,
+
       uom,
+
       ticketNumber,
+
       weighbridgeName,
+
       weighbridgeFee,
+
       receiptPath,
+
       remarks,
+
       measuredAt: new Date(),
+
       measuredBy: driverId,
     };
 
+    // =========================================================
+    // UPDATE CURRENT LEG STATUS
+    // =========================================================
+
+    currentLeg.legStatus = "Ready To Start";
+
+    // =========================================================
+    // UPDATE TRIP STATUS
+    // =========================================================
+
     trip.tripStatus = "Ready To Start";
+
+    // =========================================================
+    // SAVE
+    // =========================================================
 
     await trip.save();
 
+    // =========================================================
+    // RESPONSE
+    // =========================================================
+
     return res.status(200).json({
       success: true,
-      message: "Weighbridge completed successfully",
-      data: trip.weighbridge,
+      message: `Weighbridge completed successfully for Leg ${currentLeg.legNo}`,
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        currentLeg: trip.currentLeg,
+        tripStatus: trip.tripStatus,
+        legStatus: currentLeg.legStatus,
+        weighbridge: currentLeg.weighbridge,
+      },
     });
   } catch (error) {
+    console.error("completeWeighbridge error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -1914,7 +2915,7 @@ exports.completeWeighbridge = async (req, res) => {
 
 exports.getWeighbridge = async (req, res) => {
   try {
-    const businessId = req.user.businessId || req.driver.businessId;
+    const businessId = req.user?.businessId || req.driver?.businessId;
     const { tripId } = req.params;
 
     const trip = await Trip.findOne({
@@ -1929,25 +2930,58 @@ exports.getWeighbridge = async (req, res) => {
       });
     }
 
-    if (!trip.weighbridge || trip.weighbridge.status === "Pending") {
-      return res.status(404).json({
+    // Get current leg
+    const currentLegIndex = trip.currentLeg - 1;
+    const currentLeg = trip.journeyLegs[currentLegIndex];
+
+    if (!currentLeg) {
+      return res.status(400).json({
         success: false,
-        message: "Weighbridge details not found",
+        message: `Current leg ${trip.currentLeg} not found`,
       });
     }
 
-    // Generate signed URL
+    // Check weighbridge details
+    if (
+      !currentLeg.weighbridge ||
+      currentLeg.weighbridge.status !== "Completed"
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: `Weighbridge details not found for Leg ${currentLeg.legNo}`,
+      });
+    }
+
+    // Generate signed receipt URL only when receipt exists
+    let receiptUrl = null;
+
+    if (currentLeg.weighbridge.receiptPath) {
+      receiptUrl = await getSignedUrl(
+        currentLeg.weighbridge.receiptPath,
+        businessId,
+      );
+    }
 
     const weighbridge = {
-      ...trip.weighbridge.toObject(),
-      receiptUrl: await getSignedUrl(trip.weighbridge.receiptPath, businessId),
+      ...currentLeg.weighbridge.toObject(),
+      receiptUrl,
     };
 
     return res.status(200).json({
       success: true,
-      data: weighbridge,
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        currentLeg: trip.currentLeg,
+        legNo: currentLeg.legNo,
+        tripStatus: trip.tripStatus,
+        legStatus: currentLeg.legStatus,
+        weighbridge,
+      },
     });
   } catch (error) {
+    console.error("getWeighbridge error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -1958,11 +2992,11 @@ exports.getWeighbridge = async (req, res) => {
 exports.updateWeighbridge = async (req, res) => {
   try {
     const { businessId, driverId } = req.driver;
-
     const { tripId } = req.params;
 
     const {
       grossWeight,
+      uom,
       ticketNumber,
       weighbridgeName,
       weighbridgeFee,
@@ -1981,54 +3015,102 @@ exports.updateWeighbridge = async (req, res) => {
       });
     }
 
-    if (!trip.weighbridge || trip.weighbridge.status !== "Completed") {
+    // Get current leg
+    const currentLegIndex = trip.currentLeg - 1;
+    const currentLeg = trip.journeyLegs[currentLegIndex];
+
+    if (!currentLeg) {
+      return res.status(400).json({
+        success: false,
+        message: `Current leg ${trip.currentLeg} not found`,
+      });
+    }
+
+    // Weighbridge must already be completed
+    if (
+      !currentLeg.weighbridge ||
+      currentLeg.weighbridge.status !== "Completed"
+    ) {
       return res.status(404).json({
         success: false,
-        message: "Weighbridge details not found",
+        message: `Weighbridge details not found for Leg ${currentLeg.legNo}`,
       });
     }
 
-    if (
-      trip.driver1?.toString() !== driverId &&
-      trip.driver2?.toString() !== driverId
-    ) {
+    // Only current-leg assigned driver can update
+    const isDriverAssigned =
+      currentLeg.driver1?.toString() === driverId.toString() ||
+      currentLeg.driver2?.toString() === driverId.toString();
+
+    if (!isDriverAssigned) {
       return res.status(403).json({
         success: false,
-        message: "Only assigned driver can update weighbridge",
+        message:
+          "Only the assigned driver of the current leg can update weighbridge",
       });
     }
 
-    let receiptPath = trip.weighbridge.receiptPath;
+    // Keep existing receipt if no new file is uploaded
+    let receiptPath = currentLeg.weighbridge.receiptPath;
 
     if (req.file) {
       receiptPath = await replaceFile(
         req.file,
         businessId,
-        `trip-documents/${tripId}/weighbridge`,
-        trip.weighbridge.receiptPath,
+        `trip-documents/${tripId}/leg-${currentLeg.legNo}/weighbridge`,
+        currentLeg.weighbridge.receiptPath,
       );
     }
 
-    trip.weighbridge = {
-      ...trip.weighbridge.toObject(),
-      grossWeight,
-      ticketNumber,
-      weighbridgeName,
-      weighbridgeFee,
-      receiptPath,
-      remarks,
-      measuredAt: new Date(),
-      measuredBy: driverId,
-    };
+    // Update only provided values
+    if (grossWeight !== undefined) {
+      currentLeg.weighbridge.grossWeight = grossWeight;
+    }
+
+    if (uom !== undefined) {
+      currentLeg.weighbridge.uom = uom;
+    }
+
+    if (ticketNumber !== undefined) {
+      currentLeg.weighbridge.ticketNumber = ticketNumber;
+    }
+
+    if (weighbridgeName !== undefined) {
+      currentLeg.weighbridge.weighbridgeName = weighbridgeName;
+    }
+
+    if (weighbridgeFee !== undefined) {
+      currentLeg.weighbridge.weighbridgeFee = weighbridgeFee;
+    }
+
+    if (remarks !== undefined) {
+      currentLeg.weighbridge.remarks = remarks;
+    }
+
+    if (req.file) {
+      currentLeg.weighbridge.receiptPath = receiptPath;
+    }
+
+    currentLeg.weighbridge.measuredAt = new Date();
+    currentLeg.weighbridge.measuredBy = driverId;
 
     await trip.save();
 
     return res.status(200).json({
       success: true,
-      message: "Weighbridge updated successfully",
-      data: trip.weighbridge,
+      message: `Weighbridge updated successfully for Leg ${currentLeg.legNo}`,
+      data: {
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        currentLeg: trip.currentLeg,
+        tripStatus: trip.tripStatus,
+        legStatus: currentLeg.legStatus,
+        weighbridge: currentLeg.weighbridge,
+      },
     });
   } catch (error) {
+    console.error("updateWeighbridge error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,

@@ -14,6 +14,12 @@ const tripDocumentSchema = new mongoose.Schema(
       required: true,
     },
 
+    legNo: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+
     documentType: {
       type: String,
       enum: [
@@ -46,6 +52,18 @@ const tripDocumentSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+  }
+);
+
+tripDocumentSchema.index(
+  {
+    businessId: 1,
+    tripId: 1,
+    legNo: 1,
+    documentType: 1,
+  },
+  {
+    unique: true,
   }
 );
 

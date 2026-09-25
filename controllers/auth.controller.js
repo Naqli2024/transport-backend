@@ -2,6 +2,7 @@ const User = require("../models/User");
 const Business = require("../models/Business");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const gcpUpload = require("../utils/gcpUpload");
 
 // LOGIN (username OR mobile)
 exports.login = async (req, res) => {
@@ -82,9 +83,20 @@ exports.getUserProfile = async (req, res) => {
 
     const business = await Business.findById(user.businessId);
 
+    // =================================
+    // GET SIGNED URL FOR BUSINESS LOGO
+    // =================================
+
+    let logoUrl = null;
+
+    if (business.logo) {
+      logoUrl = await gcpUpload.getSignedUrl(business.logo, business._id);
+    }
+
     res.json({
       user,
       business,
+      logoUrl,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
