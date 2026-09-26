@@ -4249,6 +4249,7 @@ exports.createTripExpense = async (req, res) => {
       "Parking",
       "Repair",
       "Miscellaneous",
+      "PC",
     ];
 
     if (!allowedExpenseTypes.includes(expenseType)) {
@@ -4265,17 +4266,9 @@ exports.createTripExpense = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Expense amount must be greater than 0",
+        message: "Expense amount must be greater than 0",
       });
     }
-
-    // if (!req.file) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Expense bill is required",
-    //   });
-    // }
 
     const trip = await Trip.findOne({
       _id: tripId,
@@ -4289,8 +4282,12 @@ exports.createTripExpense = async (req, res) => {
       });
     }
 
-    // Current journey leg
+    // =====================================================
+    // CURRENT JOURNEY LEG
+    // =====================================================
+
     const currentLegIndex = trip.currentLeg - 1;
+
     const currentLeg =
       trip.journeyLegs[currentLegIndex];
 
@@ -4301,20 +4298,95 @@ exports.createTripExpense = async (req, res) => {
       });
     }
 
-    // Driver must belong to current leg
+    // =====================================================
+    // DRIVER ASSIGNMENT
+    // =====================================================
+
     const isAssignedDriver =
       currentLeg.driver1?.toString() ===
         driverId.toString() ||
       currentLeg.driver2?.toString() ===
         driverId.toString();
 
-    // if (!isAssignedDriver) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message:
-    //       "Only a driver assigned to the current journey leg can add expenses",
-    //   });
-    // }
+    // Uncomment when driver validation is required
+    /*
+    if (!isAssignedDriver) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only a driver assigned to the current journey leg can add expenses",
+      });
+    }
+    */
+
+    // =====================================================
+    // PC EXPENSE
+    // =====================================================
+
+    if (expenseType === "PC") {
+      if (
+        currentLeg.PC &&
+        Number(currentLeg.PC.amount || 0) > 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `PC expense already exists for Leg ${currentLeg.legNo}`,
+        });
+      }
+
+      currentLeg.PC = {
+        amount: Number(amount),
+        enteredAt: new Date(),
+        enteredBy: driverId,
+        remarks,
+      };
+
+      // ---------------------------------------------------
+      // Recalculate overall trip expense
+      // ---------------------------------------------------
+
+      const allExpenses = await TripExpense.find({
+        businessId,
+        tripId,
+      });
+
+      const tripExpenseTotal =
+        allExpenses.reduce(
+          (sum, item) =>
+            sum + Number(item.amount || 0),
+          0
+        );
+
+      const pcTotal = trip.journeyLegs.reduce(
+        (sum, leg) =>
+          sum + Number(leg.PC?.amount || 0),
+        0
+      );
+
+      trip.totalExpense =
+        tripExpenseTotal + pcTotal;
+
+      trip.totalExpenseEntries =
+        allExpenses.length +
+        trip.journeyLegs.filter(
+          (leg) =>
+            Number(leg.PC?.amount || 0) > 0
+        ).length;
+
+      await trip.save();
+
+      return res.status(201).json({
+        success: true,
+        message:
+          `PC expense submitted successfully for Leg ${currentLeg.legNo}`,
+        data: currentLeg.PC,
+      });
+    }
+
+    // =====================================================
+    // NORMAL TRIP EXPENSE
+    // =====================================================
 
     /*
      * Loading and Unloading:
@@ -4323,6 +4395,7 @@ exports.createTripExpense = async (req, res) => {
      * Parking, Repair and Miscellaneous:
      * multiple entries are allowed.
      */
+
     if (
       ["Loading", "Unloading"].includes(
         expenseType
@@ -4345,11 +4418,19 @@ exports.createTripExpense = async (req, res) => {
       }
     }
 
+    // =====================================================
+    // UPLOAD BILL
+    // =====================================================
+
     const billPath = await uploadFile(
       req.file,
       businessId,
       `trip-expenses/${tripId}/leg-${currentLeg.legNo}/${expenseType.toLowerCase()}`
     );
+
+    // =====================================================
+    // CREATE EXPENSE
+    // =====================================================
 
     const expense =
       await TripExpense.create({
@@ -4363,23 +4444,37 @@ exports.createTripExpense = async (req, res) => {
         remarks,
       });
 
-    /*
-     * Recalculate overall Trip expense totals
-     */
+    // =====================================================
+    // RECALCULATE OVERALL TRIP EXPENSE
+    // =====================================================
+
     const allExpenses = await TripExpense.find({
       businessId,
       tripId,
     });
 
-    trip.totalExpense =
+    const tripExpenseTotal =
       allExpenses.reduce(
         (sum, item) =>
           sum + Number(item.amount || 0),
         0
       );
 
+    const pcTotal = trip.journeyLegs.reduce(
+      (sum, leg) =>
+        sum + Number(leg.PC?.amount || 0),
+      0
+    );
+
+    trip.totalExpense =
+      tripExpenseTotal + pcTotal;
+
     trip.totalExpenseEntries =
-      allExpenses.length;
+      allExpenses.length +
+      trip.journeyLegs.filter(
+        (leg) =>
+          Number(leg.PC?.amount || 0) > 0
+      ).length;
 
     await trip.save();
 

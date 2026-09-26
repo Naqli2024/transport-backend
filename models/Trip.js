@@ -34,7 +34,7 @@ const tripSchema = new mongoose.Schema(
     },
 
     vehicleCategory: {
-      type: String
+      type: String,
     },
 
     // Vendor
@@ -86,7 +86,7 @@ const tripSchema = new mongoose.Schema(
         "Unloading",
         "Delivery OTP Pending",
         "Completed",
-        "Closed"
+        "Closed",
       ],
       default: "Pre Trip Pending",
     },
@@ -344,6 +344,32 @@ const tripSchema = new mongoose.Schema(
             type: String,
             enum: ["Pending", "In Progress", "Completed"],
             default: "Pending",
+          },
+        },
+
+        // =====================================================
+        // PC EXPENSE
+        // =====================================================
+
+        PC: {
+          amount: {
+            type: Number,
+            min: 0,
+            default: 0,
+          },
+
+          enteredAt: {
+            type: Date,
+          },
+
+          enteredBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Driver",
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
           },
         },
 
