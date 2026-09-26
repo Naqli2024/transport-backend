@@ -33,6 +33,10 @@ const tripSchema = new mongoose.Schema(
       ref: "Vehicle",
     },
 
+    vehicleCategory: {
+      type: String
+    },
+
     // Vendor
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,

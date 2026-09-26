@@ -11,7 +11,7 @@ const brokerSchema = new mongoose.Schema(
 
     brokerId: {
       type: String,
-      unique: true,
+      required: true,
     },
 
     companyName: {
@@ -83,19 +83,39 @@ const brokerSchema = new mongoose.Schema(
   },
 );
 
+brokerSchema.index(
+  {
+    businessId: 1,
+    brokerId: 1,
+  },
+  {
+    unique: true,
+  }
+);
+
+
 brokerSchema.pre("save", async function () {
   if (this.brokerId) return;
 
   const Broker = mongoose.model("Broker");
 
-  const lastBroker = await Broker.findOne().sort({
+  const lastBroker = await Broker.findOne({
+    businessId: this.businessId,
+  }).sort({
     createdAt: -1,
   });
 
   let next = 1;
 
-  if (lastBroker) {
-    next = parseInt(lastBroker.brokerId.split("-")[1]) + 1;
+  if (lastBroker && lastBroker.brokerId) {
+    const lastNumber = parseInt(
+      lastBroker.brokerId.split("-")[1],
+      10
+    );
+
+    if (!isNaN(lastNumber)) {
+      next = lastNumber + 1;
+    }
   }
 
   this.brokerId = `BRK-${String(next).padStart(3, "0")}`;

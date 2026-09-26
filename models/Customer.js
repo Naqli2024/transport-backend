@@ -11,7 +11,7 @@ const customerSchema = new mongoose.Schema(
 
     customerId: {
       type: String,
-      unique: true,
+      required: true,
     },
 
     companyName: {
@@ -104,9 +104,13 @@ const customerSchema = new mongoose.Schema(
   },
 );
 
+customerSchema.index(
+  { businessId: 1, customerId: 1 },
+  { unique: true }
+);
+
 /* =====================================
-AUTO CUSTOMER ID
-CUS-001
+AUTO CUSTOMER ID — PER BUSINESS
 ===================================== */
 
 customerSchema.pre("save", async function () {
@@ -114,14 +118,20 @@ customerSchema.pre("save", async function () {
 
   const Customer = mongoose.model("Customer");
 
-  const last = await Customer.findOne().sort({
+  const last = await Customer.findOne({
+    businessId: this.businessId,
+  }).sort({
     createdAt: -1,
   });
 
   let next = 1;
 
   if (last && last.customerId) {
-    next = parseInt(last.customerId.split("-")[1]) + 1;
+    const lastNumber = parseInt(last.customerId.split("-")[1], 10);
+
+    if (!isNaN(lastNumber)) {
+      next = lastNumber + 1;
+    }
   }
 
   this.customerId = `CUS-${String(next).padStart(3, "0")}`;

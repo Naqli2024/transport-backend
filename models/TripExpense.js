@@ -6,14 +6,18 @@ const tripExpenseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
       required: true,
-      index: true,
     },
 
     tripId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Trip",
       required: true,
-      index: true,
+    },
+
+    legNo: {
+      type: Number,
+      required: true,
+      min: 1,
     },
 
     driverId: {
@@ -37,12 +41,17 @@ const tripExpenseSchema = new mongoose.Schema(
     amount: {
       type: Number,
       required: true,
-      default: 0,
+      min: 0,
     },
 
     filePath: {
       type: String,
       required: true,
+    },
+
+    remarks: {
+      type: String,
+      trim: true,
     },
   },
   {
