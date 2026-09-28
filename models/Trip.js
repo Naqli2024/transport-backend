@@ -606,33 +606,6 @@ const tripSchema = new mongoose.Schema(
     closedAt: {
       type: Date,
     },
-
-    // =========================================================
-    // SETTLEMENT
-    // =========================================================
-
-    settlement: {
-      status: {
-        type: String,
-        enum: ["Pending", "Partial", "Settled"],
-        default: "Pending",
-      },
-
-      settledAmount: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      settledAt: {
-        type: Date,
-      },
-
-      remarks: {
-        type: String,
-        trim: true,
-      },
-    },
   },
   {
     timestamps: true,

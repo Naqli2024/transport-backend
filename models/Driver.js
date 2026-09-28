@@ -126,6 +126,201 @@ const driverSchema = new mongoose.Schema(
     lat: Number,
 
     lng: Number,
+
+    // =================================
+    // DRIVER SETTLEMENT
+    // =================================
+
+    settlement: {
+      trips: [
+        {
+          tripId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Trip",
+            required: true,
+          },
+
+          tripNo: {
+            type: String,
+          },
+
+          vehicleId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Vehicle",
+          },
+
+          vehicleNo: {
+            type: String,
+          },
+
+          journeyType: {
+            type: String,
+          },
+
+          legs: [
+            {
+              legNo: {
+                type: Number,
+                required: true,
+              },
+
+              from: {
+                type: String,
+              },
+
+              to: {
+                type: String,
+              },
+
+              driver1: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Driver",
+              },
+
+              driver2: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Driver",
+              },
+
+              driverSalary: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              freightAmount: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              driverAdvance: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              PC: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              weighbridge: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              fuel: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              loading: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              unloading: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              parking: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              repair: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              miscellaneous: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              actualExpense: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              officePay: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              driverReturn: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+            },
+          ],
+
+          totalDriverSalary: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          totalAdvance: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          totalExpense: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          officeShouldPay: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          driverShouldReturn: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          status: {
+            type: String,
+            enum: ["Pending", "Partial", "Settled"],
+            default: "Pending",
+          },
+
+          settledAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          settledAt: {
+            type: Date,
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
+          },
+        },
+      ],
+    },
   },
   {
     timestamps: true,

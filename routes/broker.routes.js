@@ -1,4 +1,5 @@
 const express = require("express");
+
 const router = express.Router();
 
 const brokerController = require("../controllers/broker.controller");
@@ -21,6 +22,26 @@ router.get("/dashboard", authMiddleware, brokerController.getBrokerDashboard);
 ================================= */
 
 router.get("/", authMiddleware, brokerController.getAllBrokers);
+
+/* =================================
+   BROKER SETTLEMENT SUMMARY
+================================= */
+
+router.get(
+  "/:brokerId/trip-summary",
+  authMiddleware,
+  brokerController.getBrokerTripSummary,
+);
+
+/* =================================
+   SETTLE BROKER AMOUNT
+================================= */
+
+router.post(
+  "/:brokerId/settlement",
+  authMiddleware,
+  brokerController.settleBrokerAmount,
+);
 
 /* =================================
    GET SINGLE BROKER

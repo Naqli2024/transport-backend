@@ -1225,506 +1225,1260 @@ exports.getCurrentTrip = async (
    DRIVER SETTLEMENT
 ========================================================= */
 
-exports.getDriverSettlement =
-  async (req, res) => {
-    try {
-      const businessId =
-        req.user.businessId;
+exports.getDriverSettlement = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { driverId } = req.params;
 
-      const { driverId } =
-        req.params;
+    // ===================================================
+    // DRIVER
+    // ===================================================
 
-      // ===================================================
-      // DRIVER
-      // ===================================================
+    const driver = await Driver.findOne({
+      _id: driverId,
+      businessId,
+    }).select(
+      "name mobile driverId settlement"
+    );
 
-      const driver =
-        await Driver.findOne({
-          _id: driverId,
-          businessId,
-        }).select(
-          "name mobile driverId",
-        );
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
 
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: "Driver not found",
-        });
+    // ===================================================
+    // COMPLETED TRIPS
+    // WHERE DRIVER WAS ASSIGNED TO ANY LEG
+    // ===================================================
+
+    const trips = await Trip.find({
+      businessId,
+
+      tripStatus: "Completed",
+
+      journeyLegs: {
+        $elemMatch: {
+          $or: [
+            {
+              driver1: driverId,
+            },
+            {
+              driver2: driverId,
+            },
+          ],
+        },
+      },
+    })
+      .populate("vehicleId", "regNo")
+      .sort({
+        completedAt: -1,
+      });
+
+    // ===================================================
+    // ALREADY SETTLED TRIP IDS FOR THIS DRIVER
+    // ===================================================
+
+    const settledTripIds = new Set(
+      (driver.settlement?.trips || [])
+        .filter(
+          (settlementTrip) =>
+            settlementTrip.status ===
+            "Settled"
+        )
+        .map((settlementTrip) =>
+          settlementTrip.tripId.toString()
+        )
+    );
+
+    // ===================================================
+    // ROUNDING
+    // ===================================================
+
+    const round = (value) =>
+      Number(
+        Number(value || 0).toFixed(2)
+      );
+
+    let totalDriverSalary = 0;
+    let totalAdvance = 0;
+    let totalExpense = 0;
+    let officeShouldPay = 0;
+    let driverShouldReturn = 0;
+
+    const tripData = [];
+
+    // ===================================================
+    // EACH TRIP
+    // ===================================================
+
+    for (const trip of trips) {
+      // -------------------------------------------------
+      // Ignore already settled trip for this driver
+      // -------------------------------------------------
+
+      if (
+        settledTripIds.has(
+          trip._id.toString()
+        )
+      ) {
+        continue;
       }
 
-      // ===================================================
-      // COMPLETED / PENDING SETTLEMENT TRIPS
-      // WHERE DRIVER WAS ASSIGNED TO ANY LEG
-      // ===================================================
+      // -------------------------------------------------
+      // DRIVER'S LEGS ONLY
+      // -------------------------------------------------
 
-      const trips =
-        await Trip.find({
-          businessId,
-
-          tripStatus: "Completed",
-
-          "settlement.status":
-            "Pending",
-
-          journeyLegs: {
-            $elemMatch: {
-              $or: [
-                {
-                  driver1:
-                    driverId,
-                },
-                {
-                  driver2:
-                    driverId,
-                },
-              ],
-            },
-          },
-        })
-          .populate(
-            "vehicleId",
-            "regNo",
-          )
-          .sort({
-            completedAt: -1,
-          });
-
-      const tripIds =
-        trips.map(
-          (trip) => trip._id,
+      const driverLegs =
+        (trip.journeyLegs || []).filter(
+          (leg) =>
+            leg.driver1?.toString() ===
+              driverId.toString() ||
+            leg.driver2?.toString() ===
+              driverId.toString()
         );
 
-      // ===================================================
+      if (driverLegs.length === 0) {
+        continue;
+      }
+
+      // -------------------------------------------------
+      // DRIVER LEG NUMBERS
+      // -------------------------------------------------
+
+      const driverLegNos =
+        driverLegs.map(
+          (leg) => Number(leg.legNo)
+        );
+
+      // -------------------------------------------------
       // TRIP EXPENSES
-      // ===================================================
+      // -------------------------------------------------
 
       const expenses =
         await TripExpense.find({
           businessId,
-          tripId: {
-            $in: tripIds,
+          tripId: trip._id,
+
+          driverId,
+
+          legNo: {
+            $in: driverLegNos,
           },
         }).lean();
 
-      // ===================================================
-      // ROUNDING
-      // ===================================================
+      // -------------------------------------------------
+      // DRIVER SALARY
+      // -------------------------------------------------
 
-      const round = (value) =>
-        Number(
-          Number(value || 0).toFixed(
-            2,
-          ),
+      const driverSalary =
+        driverLegs.reduce(
+          (sum, leg) =>
+            sum +
+            Number(
+              leg.driverSalary || 0
+            ),
+          0
         );
 
-      let totalAdvance = 0;
-      let totalExpense = 0;
-      let officeShouldPay = 0;
-      let driverShouldReturn = 0;
+      // -------------------------------------------------
+      // DRIVER ADVANCE
+      // -------------------------------------------------
 
-      const tripData = [];
+      const advance =
+        driverLegs.reduce(
+          (sum, leg) =>
+            sum +
+            (leg.driverAdvance || [])
+              .reduce(
+                (
+                  advanceSum,
+                  advanceEntry
+                ) =>
+                  advanceSum +
+                  Number(
+                    advanceEntry.amount ||
+                      0
+                  ),
+                0
+              ),
+          0
+        );
 
-      // ===================================================
-      // EACH TRIP
-      // ===================================================
+      // -------------------------------------------------
+      // LOADING
+      // -------------------------------------------------
 
-      for (const trip of trips) {
-        // -------------------------------------------------
-        // Driver's legs only
-        // -------------------------------------------------
-
-        const driverLegs =
-          trip.journeyLegs.filter(
-            (leg) =>
-              leg.driver1
-                ?.toString() ===
-                driverId.toString() ||
-              leg.driver2
-                ?.toString() ===
-                driverId.toString(),
-          );
-
-        // -------------------------------------------------
-        // Driver Advance
-        // -------------------------------------------------
-
-        const advance =
-          driverLegs.reduce(
-            (sum, leg) =>
-              sum +
-              (leg.driverAdvance ||
-                []).reduce(
-                  (
-                    advanceSum,
-                    advanceEntry,
-                  ) =>
-                    advanceSum +
-                    Number(
-                      advanceEntry.amount ||
-                        0,
-                    ),
-                  0,
-                ),
-            0,
-          );
-
-        // -------------------------------------------------
-        // Trip Expenses
-        // -------------------------------------------------
-
-        const tripExpenses =
-          expenses.filter(
-            (expense) =>
-              expense.tripId.toString() ===
-              trip._id.toString(),
-          );
-
-        const loading =
-          tripExpenses
-            .filter(
-              (e) =>
-                e.expenseType ===
-                "Loading",
-            )
-            .reduce(
-              (sum, e) =>
-                sum +
-                Number(e.amount || 0),
-              0,
-            );
-
-        const unloading =
-          tripExpenses
-            .filter(
-              (e) =>
-                e.expenseType ===
-                "Unloading",
-            )
-            .reduce(
-              (sum, e) =>
-                sum +
-                Number(e.amount || 0),
-              0,
-            );
-
-        const parking =
-          tripExpenses
-            .filter(
-              (e) =>
-                e.expenseType ===
-                "Parking",
-            )
-            .reduce(
-              (sum, e) =>
-                sum +
-                Number(e.amount || 0),
-              0,
-            );
-
-        const repair =
-          tripExpenses
-            .filter(
-              (e) =>
-                e.expenseType ===
-                "Repair",
-            )
-            .reduce(
-              (sum, e) =>
-                sum +
-                Number(e.amount || 0),
-              0,
-            );
-
-        const misc =
-          tripExpenses
-            .filter(
-              (e) =>
-                e.expenseType ===
-                "Miscellaneous",
-            )
-            .reduce(
-              (sum, e) =>
-                sum +
-                Number(e.amount || 0),
-              0,
-            );
-
-        // -------------------------------------------------
-        // PC
-        // -------------------------------------------------
-
-        const PC =
-          driverLegs.reduce(
-            (sum, leg) =>
+      const loading =
+        expenses
+          .filter(
+            (e) =>
+              e.expenseType ===
+              "Loading"
+          )
+          .reduce(
+            (sum, e) =>
               sum +
               Number(
-                leg.PC?.amount || 0,
+                e.amount || 0
               ),
-            0,
+            0
           );
 
-        // -------------------------------------------------
-        // Fuel
-        // -------------------------------------------------
+      // -------------------------------------------------
+      // UNLOADING
+      // -------------------------------------------------
 
-        const fuel = round(
-          trip.totalFuelCost || 0,
+      const unloading =
+        expenses
+          .filter(
+            (e) =>
+              e.expenseType ===
+              "Unloading"
+          )
+          .reduce(
+            (sum, e) =>
+              sum +
+              Number(
+                e.amount || 0
+              ),
+            0
+          );
+
+      // -------------------------------------------------
+      // PARKING
+      // -------------------------------------------------
+
+      const parking =
+        expenses
+          .filter(
+            (e) =>
+              e.expenseType ===
+              "Parking"
+          )
+          .reduce(
+            (sum, e) =>
+              sum +
+              Number(
+                e.amount || 0
+              ),
+            0
+          );
+
+      // -------------------------------------------------
+      // REPAIR
+      // -------------------------------------------------
+
+      const repair =
+        expenses
+          .filter(
+            (e) =>
+              e.expenseType ===
+              "Repair"
+          )
+          .reduce(
+            (sum, e) =>
+              sum +
+              Number(
+                e.amount || 0
+              ),
+            0
+          );
+
+      // -------------------------------------------------
+      // MISCELLANEOUS
+      // -------------------------------------------------
+
+      const miscellaneous =
+        expenses
+          .filter(
+            (e) =>
+              e.expenseType ===
+              "Miscellaneous"
+          )
+          .reduce(
+            (sum, e) =>
+              sum +
+              Number(
+                e.amount || 0
+              ),
+            0
+          );
+
+      // -------------------------------------------------
+      // PC
+      // -------------------------------------------------
+
+      const PC =
+        driverLegs.reduce(
+          (sum, leg) =>
+            sum +
+            Number(
+              leg.PC?.amount || 0
+            ),
+          0
         );
 
-        // -------------------------------------------------
-        // Weighbridge
-        //
-        // Latest model:
-        // weighbridge is inside each leg.
-        // -------------------------------------------------
+      // -------------------------------------------------
+      // FUEL
+      // -------------------------------------------------
 
-        const weighbridge =
-          driverLegs.reduce(
-            (sum, leg) =>
-              sum +
+      const fuel = round(
+        trip.totalFuelCost || 0
+      );
+
+      // -------------------------------------------------
+      // WEIGHBRIDGE
+      // -------------------------------------------------
+
+      const weighbridge =
+        driverLegs.reduce(
+          (sum, leg) =>
+            sum +
+            Number(
+              leg.weighbridge
+                ?.weighbridgeFee || 0
+            ),
+          0
+        );
+
+      // -------------------------------------------------
+      // ACTUAL EXPENSE
+      // -------------------------------------------------
+
+      const actualExpense =
+        round(
+          fuel +
+            loading +
+            unloading +
+            parking +
+            repair +
+            miscellaneous +
+            PC +
+            weighbridge
+        );
+
+      // -------------------------------------------------
+      // SETTLEMENT CALCULATION
+      // -------------------------------------------------
+
+      let officePay = 0;
+      let driverReturn = 0;
+
+      if (
+        actualExpense > advance
+      ) {
+        officePay =
+          actualExpense -
+          advance;
+      } else {
+        driverReturn =
+          advance -
+          actualExpense;
+      }
+
+      // -------------------------------------------------
+      // TOTALS
+      // -------------------------------------------------
+
+      totalDriverSalary +=
+        driverSalary;
+
+      totalAdvance += advance;
+
+      totalExpense +=
+        actualExpense;
+
+      officeShouldPay +=
+        officePay;
+
+      driverShouldReturn +=
+        driverReturn;
+
+      // -------------------------------------------------
+      // DRIVER LEGS
+      // -------------------------------------------------
+
+      const legs =
+        driverLegs.map(
+          (leg) => {
+            const legExpenses =
+              expenses.filter(
+                (expense) =>
+                  Number(
+                    expense.legNo
+                  ) ===
+                  Number(
+                    leg.legNo
+                  )
+              );
+
+            const legLoading =
+              legExpenses
+                .filter(
+                  (e) =>
+                    e.expenseType ===
+                    "Loading"
+                )
+                .reduce(
+                  (sum, e) =>
+                    sum +
+                    Number(
+                      e.amount || 0
+                    ),
+                  0
+                );
+
+            const legUnloading =
+              legExpenses
+                .filter(
+                  (e) =>
+                    e.expenseType ===
+                    "Unloading"
+                )
+                .reduce(
+                  (sum, e) =>
+                    sum +
+                    Number(
+                      e.amount || 0
+                    ),
+                  0
+                );
+
+            const legParking =
+              legExpenses
+                .filter(
+                  (e) =>
+                    e.expenseType ===
+                    "Parking"
+                )
+                .reduce(
+                  (sum, e) =>
+                    sum +
+                    Number(
+                      e.amount || 0
+                    ),
+                  0
+                );
+
+            const legRepair =
+              legExpenses
+                .filter(
+                  (e) =>
+                    e.expenseType ===
+                    "Repair"
+                )
+                .reduce(
+                  (sum, e) =>
+                    sum +
+                    Number(
+                      e.amount || 0
+                    ),
+                  0
+                );
+
+            const legMiscellaneous =
+              legExpenses
+                .filter(
+                  (e) =>
+                    e.expenseType ===
+                    "Miscellaneous"
+                )
+                .reduce(
+                  (sum, e) =>
+                    sum +
+                    Number(
+                      e.amount || 0
+                    ),
+                  0
+                );
+
+            const legAdvance =
+              (
+                leg.driverAdvance ||
+                []
+              ).reduce(
+                (sum, entry) =>
+                  sum +
+                  Number(
+                    entry.amount || 0
+                  ),
+                0
+              );
+
+            const legPC =
+              Number(
+                leg.PC?.amount || 0
+              );
+
+            const legWeighbridge =
               Number(
                 leg.weighbridge
                   ?.weighbridgeFee ||
-                  0,
-              ),
-            0,
-          );
+                  0
+              );
 
-        // -------------------------------------------------
-        // Actual Expense
-        // -------------------------------------------------
+            const legFuel = 0;
 
-        const actualExpense =
+            const legActualExpense =
+              round(
+                legFuel +
+                  legLoading +
+                  legUnloading +
+                  legParking +
+                  legRepair +
+                  legMiscellaneous +
+                  legPC +
+                  legWeighbridge
+              );
+
+            let legOfficePay = 0;
+            let legDriverReturn = 0;
+
+            if (
+              legActualExpense >
+              legAdvance
+            ) {
+              legOfficePay =
+                legActualExpense -
+                legAdvance;
+            } else {
+              legDriverReturn =
+                legAdvance -
+                legActualExpense;
+            }
+
+            return {
+              legNo:
+                leg.legNo,
+
+              from:
+                leg.from,
+
+              to:
+                leg.to,
+
+              driver1:
+                leg.driver1,
+
+              driver2:
+                leg.driver2,
+
+              driverSalary:
+                round(
+                  leg.driverSalary
+                ),
+
+              freightAmount:
+                round(
+                  leg.estimatedFreightAmount
+                ),
+
+              driverAdvance:
+                round(
+                  legAdvance
+                ),
+
+              fuel:
+                legFuel,
+
+              loading:
+                round(
+                  legLoading
+                ),
+
+              unloading:
+                round(
+                  legUnloading
+                ),
+
+              parking:
+                round(
+                  legParking
+                ),
+
+              repair:
+                round(
+                  legRepair
+                ),
+
+              miscellaneous:
+                round(
+                  legMiscellaneous
+                ),
+
+              PC:
+                round(
+                  legPC
+                ),
+
+              weighbridge:
+                round(
+                  legWeighbridge
+                ),
+
+              actualExpense:
+                legActualExpense,
+
+              officePay:
+                round(
+                  legOfficePay
+                ),
+
+              driverReturn:
+                round(
+                  legDriverReturn
+                ),
+            };
+          }
+        );
+
+      // -------------------------------------------------
+      // TRIP DATA
+      // -------------------------------------------------
+
+      tripData.push({
+        tripId:
+          trip._id,
+
+        tripNo:
+          trip.tripNo,
+
+        vehicleId:
+          trip.vehicleId?._id ||
+          trip.vehicleId,
+
+        vehicleNo:
+          trip.vehicleId?.regNo ||
+          "-",
+
+        journeyType:
+          trip.journeyType,
+
+        legs,
+
+        totalDriverSalary:
           round(
-            fuel +
-              loading +
-              unloading +
-              parking +
-              repair +
-              misc +
-              PC +
-              weighbridge,
-          );
+            driverSalary
+          ),
 
-        // -------------------------------------------------
-        // Settlement
-        // -------------------------------------------------
-
-        let officePay = 0;
-        let driverReturn = 0;
-
-        if (
-          actualExpense > advance
-        ) {
-          officePay =
-            actualExpense -
-            advance;
-
-          officeShouldPay +=
-            officePay;
-        } else {
-          driverReturn =
-            advance -
-            actualExpense;
-
-          driverShouldReturn +=
-            driverReturn;
-        }
-
-        totalAdvance += advance;
-        totalExpense +=
-          actualExpense;
-
-        // -------------------------------------------------
-        // Trip Data
-        // -------------------------------------------------
-
-        tripData.push({
-          tripId: trip._id,
-
-          tripNo:
-            trip.tripNo,
-
-          vehicleNo:
-            trip.vehicleId
-              ?.regNo || "-",
-
-          journeyType:
-            trip.journeyType,
-
-          freightAmount:
+        freightAmount:
+          round(
             driverLegs.reduce(
               (sum, leg) =>
                 sum +
                 Number(
                   leg.estimatedFreightAmount ||
-                    0,
+                    0
                 ),
-              0,
-            ),
+              0
+            )
+          ),
 
-          advance:
-            round(advance),
+        advance:
+          round(
+            advance
+          ),
 
-          fuel,
+        fuel,
 
-          loading:
-            round(loading),
+        loading:
+          round(
+            loading
+          ),
 
-          unloading:
-            round(unloading),
+        unloading:
+          round(
+            unloading
+          ),
 
-          parking:
-            round(parking),
+        parking:
+          round(
+            parking
+          ),
 
-          repair:
-            round(repair),
+        repair:
+          round(
+            repair
+          ),
 
-          miscellaneous:
-            round(misc),
+        miscellaneous:
+          round(
+            miscellaneous
+          ),
 
-          PC:
-            round(PC),
+        PC:
+          round(
+            PC
+          ),
 
-          weighbridge:
-            round(weighbridge),
+        weighbridge:
+          round(
+            weighbridge
+          ),
 
-          actualExpense,
+        actualExpense,
 
-          officePay:
-            round(officePay),
+        officePay:
+          round(
+            officePay
+          ),
 
-          driverReturn:
-            round(driverReturn),
-        });
-      }
+        driverReturn:
+          round(
+            driverReturn
+          ),
 
-      // ===================================================
-      // RESPONSE
-      // ===================================================
-
-      return res.status(200).json({
-        success: true,
-
-        data: {
-          driver: {
-            _id:
-              driver._id,
-
-            driverId:
-              driver.driverId,
-
-            name:
-              driver.name,
-
-            mobile:
-              driver.mobile,
-          },
-
-          summary: {
-            totalTrips:
-              trips.length,
-
-            totalAdvance:
-              round(totalAdvance),
-
-            totalExpense:
-              round(totalExpense),
-
-            officeShouldPay:
-              round(
-                officeShouldPay,
-              ),
-
-            driverShouldReturn:
-              round(
-                driverShouldReturn,
-              ),
-          },
-
-          trips: tripData,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "getDriverSettlement error:",
-        error,
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: error.message,
+        status:
+          "Pending",
       });
     }
-  };
+
+    // ===================================================
+    // RESPONSE
+    // ===================================================
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        driver: {
+          _id:
+            driver._id,
+
+          driverId:
+            driver.driverId,
+
+          name:
+            driver.name,
+
+          mobile:
+            driver.mobile,
+        },
+
+        summary: {
+          totalTrips:
+            tripData.length,
+
+          totalDriverSalary:
+            round(
+              totalDriverSalary
+            ),
+
+          totalAdvance:
+            round(
+              totalAdvance
+            ),
+
+          totalExpense:
+            round(
+              totalExpense
+            ),
+
+          officeShouldPay:
+            round(
+              officeShouldPay
+            ),
+
+          driverShouldReturn:
+            round(
+              driverShouldReturn
+            ),
+        },
+
+        trips:
+          tripData,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "getDriverSettlement error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 
 /* =========================================================
    SETTLE DRIVER TRIPS
 ========================================================= */
 
-exports.settleDriverTrips =
-  async (req, res) => {
-    try {
-      const businessId =
-        req.user.businessId;
+exports.settleDriverTrips = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { driverId } = req.params;
+    const { tripIds, remarks } = req.body;
 
-      const {
-        tripIds,
-        remarks,
-      } = req.body;
-
-      if (
-        !Array.isArray(tripIds) ||
-        tripIds.length === 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "tripIds must be a non-empty array",
-        });
-      }
-
-      // ===================================================
-      // UPDATE ONLY BUSINESS TRIPS
-      // ===================================================
-
-      await Trip.updateMany(
-        {
-          businessId,
-
-          _id: {
-            $in: tripIds,
-          },
-        },
-        {
-          $set: {
-            "settlement.status":
-              "Settled",
-
-            "settlement.settledAt":
-              new Date(),
-
-            "settlement.remarks":
-              remarks,
-          },
-        },
-      );
-
-      return res.status(200).json({
-        success: true,
-        message:
-          "Driver settlement completed",
-      });
-    } catch (error) {
-      console.error(
-        "settleDriverTrips error:",
-        error,
-      );
-
-      return res.status(500).json({
+    if (!driverId) {
+      return res.status(400).json({
         success: false,
-        message: error.message,
+        message: "Driver ID is required",
       });
     }
-  };
+
+    if (!Array.isArray(tripIds) || tripIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "tripIds must be a non-empty array",
+      });
+    }
+
+    // --------------------------------------------------
+    // 1. Find driver
+    // --------------------------------------------------
+    const driver = await Driver.findOne({
+      _id: driverId,
+      businessId,
+    });
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    // --------------------------------------------------
+    // 2. Find completed trips assigned to this driver
+    // --------------------------------------------------
+    const trips = await Trip.find({
+      businessId,
+      _id: { $in: tripIds },
+      tripStatus: "Completed",
+      journeyLegs: {
+        $elemMatch: {
+          $or: [
+            { driver1: driverId },
+            { driver2: driverId },
+          ],
+        },
+      },
+    }).populate("vehicleId", "regNo");
+
+    if (trips.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No eligible completed trips found for this driver",
+      });
+    }
+
+    // --------------------------------------------------
+    // 3. Get TripExpense records
+    // --------------------------------------------------
+    const foundTripIds = trips.map((trip) => trip._id);
+
+    const expenses = await TripExpense.find({
+      businessId,
+      tripId: { $in: foundTripIds },
+      driverId,
+    }).lean();
+
+    // --------------------------------------------------
+    // 4. Existing driver settlements
+    // --------------------------------------------------
+    if (!driver.settlement) {
+      driver.settlement = {
+        trips: [],
+      };
+    }
+
+    if (!Array.isArray(driver.settlement.trips)) {
+      driver.settlement.trips = [];
+    }
+
+    const alreadySettledTripIds = new Set(
+      driver.settlement.trips
+        .filter((item) => item.status === "Settled")
+        .map((item) => item.tripId?.toString())
+    );
+
+    // --------------------------------------------------
+    // 5. Prepare settlement entries
+    // --------------------------------------------------
+    const settlementEntries = [];
+
+    const round = (value) =>
+      Number(Number(value || 0).toFixed(2));
+
+    for (const trip of trips) {
+      const tripIdString = trip._id.toString();
+
+      // Prevent duplicate settlement
+      if (alreadySettledTripIds.has(tripIdString)) {
+        continue;
+      }
+
+      // --------------------------------------------------
+      // Driver's legs only
+      // --------------------------------------------------
+      const driverLegs = (trip.journeyLegs || []).filter(
+        (leg) =>
+          leg.driver1?.toString() === driverId.toString() ||
+          leg.driver2?.toString() === driverId.toString()
+      );
+
+      if (driverLegs.length === 0) {
+        continue;
+      }
+
+      const driverLegNos = driverLegs.map((leg) =>
+        Number(leg.legNo)
+      );
+
+      // --------------------------------------------------
+      // Driver expenses for these legs
+      // --------------------------------------------------
+      const driverTripExpenses = expenses.filter((expense) => {
+        return (
+          expense.tripId.toString() === tripIdString &&
+          expense.driverId?.toString() === driverId.toString() &&
+          driverLegNos.includes(Number(expense.legNo))
+        );
+      });
+
+      // --------------------------------------------------
+      // Expense calculations
+      // --------------------------------------------------
+      const loading = driverTripExpenses
+        .filter((e) => e.expenseType === "Loading")
+        .reduce(
+          (sum, e) => sum + Number(e.amount || 0),
+          0
+        );
+
+      const unloading = driverTripExpenses
+        .filter((e) => e.expenseType === "Unloading")
+        .reduce(
+          (sum, e) => sum + Number(e.amount || 0),
+          0
+        );
+
+      const parking = driverTripExpenses
+        .filter((e) => e.expenseType === "Parking")
+        .reduce(
+          (sum, e) => sum + Number(e.amount || 0),
+          0
+        );
+
+      const repair = driverTripExpenses
+        .filter((e) => e.expenseType === "Repair")
+        .reduce(
+          (sum, e) => sum + Number(e.amount || 0),
+          0
+        );
+
+      const miscellaneous = driverTripExpenses
+        .filter((e) => e.expenseType === "Miscellaneous")
+        .reduce(
+          (sum, e) => sum + Number(e.amount || 0),
+          0
+        );
+
+      // --------------------------------------------------
+      // PC
+      // --------------------------------------------------
+      const PC = driverLegs.reduce(
+        (sum, leg) =>
+          sum + Number(leg.PC?.amount || 0),
+        0
+      );
+
+      // --------------------------------------------------
+      // Fuel
+      // --------------------------------------------------
+      const fuel = round(trip.totalFuelCost || 0);
+
+      // --------------------------------------------------
+      // Weighbridge
+      // --------------------------------------------------
+      const weighbridge = driverLegs.reduce(
+        (sum, leg) =>
+          sum +
+          Number(
+            leg.weighbridge?.weighbridgeFee || 0
+          ),
+        0
+      );
+
+      // --------------------------------------------------
+      // Driver Advance
+      // --------------------------------------------------
+      const totalAdvance = driverLegs.reduce(
+        (sum, leg) =>
+          sum +
+          (leg.driverAdvance || []).reduce(
+            (advanceSum, entry) =>
+              advanceSum + Number(entry.amount || 0),
+            0
+          ),
+        0
+      );
+
+      // --------------------------------------------------
+      // Driver Salary
+      // --------------------------------------------------
+      const totalDriverSalary = driverLegs.reduce(
+        (sum, leg) =>
+          sum + Number(leg.driverSalary || 0),
+        0
+      );
+
+      // --------------------------------------------------
+      // Actual Expense
+      // --------------------------------------------------
+      const actualExpense = round(
+        fuel +
+          loading +
+          unloading +
+          parking +
+          repair +
+          miscellaneous +
+          PC +
+          weighbridge
+      );
+
+      // --------------------------------------------------
+      // Office / Driver settlement calculation
+      // --------------------------------------------------
+      let officeShouldPay = 0;
+      let driverShouldReturn = 0;
+
+      if (actualExpense > totalAdvance) {
+        officeShouldPay = round(
+          actualExpense - totalAdvance
+        );
+      } else {
+        driverShouldReturn = round(
+          totalAdvance - actualExpense
+        );
+      }
+
+      // --------------------------------------------------
+      // Leg-wise settlement details
+      // --------------------------------------------------
+      const settlementLegs = driverLegs.map((leg) => {
+        const legExpenses = driverTripExpenses.filter(
+          (expense) =>
+            Number(expense.legNo) === Number(leg.legNo)
+        );
+
+        const legLoading = legExpenses
+          .filter((e) => e.expenseType === "Loading")
+          .reduce(
+            (sum, e) => sum + Number(e.amount || 0),
+            0
+          );
+
+        const legUnloading = legExpenses
+          .filter((e) => e.expenseType === "Unloading")
+          .reduce(
+            (sum, e) => sum + Number(e.amount || 0),
+            0
+          );
+
+        const legParking = legExpenses
+          .filter((e) => e.expenseType === "Parking")
+          .reduce(
+            (sum, e) => sum + Number(e.amount || 0),
+            0
+          );
+
+        const legRepair = legExpenses
+          .filter((e) => e.expenseType === "Repair")
+          .reduce(
+            (sum, e) => sum + Number(e.amount || 0),
+            0
+          );
+
+        const legMiscellaneous = legExpenses
+          .filter(
+            (e) => e.expenseType === "Miscellaneous"
+          )
+          .reduce(
+            (sum, e) => sum + Number(e.amount || 0),
+            0
+          );
+
+        const legPC = Number(
+          leg.PC?.amount || 0
+        );
+
+        const legWeighbridge = Number(
+          leg.weighbridge?.weighbridgeFee || 0
+        );
+
+        const legAdvance = (
+          leg.driverAdvance || []
+        ).reduce(
+          (sum, entry) =>
+            sum + Number(entry.amount || 0),
+          0
+        );
+
+        const legExpense = round(
+          legLoading +
+            legUnloading +
+            legParking +
+            legRepair +
+            legMiscellaneous +
+            legPC +
+            legWeighbridge
+        );
+
+        let legOfficePay = 0;
+        let legDriverReturn = 0;
+
+        if (legExpense > legAdvance) {
+          legOfficePay = round(
+            legExpense - legAdvance
+          );
+        } else {
+          legDriverReturn = round(
+            legAdvance - legExpense
+          );
+        }
+
+        return {
+          legNo: Number(leg.legNo),
+
+          from: leg.from || "",
+          to: leg.to || "",
+
+          driver1: leg.driver1 || null,
+          driver2: leg.driver2 || null,
+
+          driverSalary: round(
+            leg.driverSalary || 0
+          ),
+
+          freightAmount: round(
+            leg.estimatedFreightAmount || 0
+          ),
+
+          driverAdvance: round(legAdvance),
+
+          PC: round(legPC),
+
+          weighbridge: round(
+            legWeighbridge
+          ),
+
+          loading: round(legLoading),
+          unloading: round(legUnloading),
+          parking: round(legParking),
+          repair: round(legRepair),
+          miscellaneous: round(
+            legMiscellaneous
+          ),
+
+          actualExpense: round(legExpense),
+
+          officePay: round(legOfficePay),
+
+          driverReturn: round(
+            legDriverReturn
+          ),
+        };
+      });
+
+      // --------------------------------------------------
+      // Trip settlement entry
+      // --------------------------------------------------
+      settlementEntries.push({
+        tripId: trip._id,
+
+        tripNo: trip.tripNo,
+
+        vehicleId: trip.vehicleId?._id || null,
+
+        vehicleNo:
+          trip.vehicleId?.regNo || "-",
+
+        journeyType: trip.journeyType,
+
+        legs: settlementLegs,
+
+        totalDriverSalary: round(
+          totalDriverSalary
+        ),
+
+        totalAdvance: round(
+          totalAdvance
+        ),
+
+        totalExpense: round(
+          actualExpense
+        ),
+
+        officeShouldPay: round(
+          officeShouldPay
+        ),
+
+        driverShouldReturn: round(
+          driverShouldReturn
+        ),
+
+        status: "Settled",
+
+        settledAmount: round(
+          officeShouldPay
+        ),
+
+        settledAt: new Date(),
+
+        remarks: remarks || "",
+      });
+    }
+
+    // --------------------------------------------------
+    // 6. No new settlements
+    // --------------------------------------------------
+    if (settlementEntries.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "All selected trips are already settled for this driver",
+      });
+    }
+
+    // --------------------------------------------------
+    // 7. Push settlement entries into Driver
+    // --------------------------------------------------
+    driver.settlement.trips.push(
+      ...settlementEntries
+    );
+
+    await driver.save();
+
+    // --------------------------------------------------
+    // 8. Response
+    // --------------------------------------------------
+    return res.status(200).json({
+      success: true,
+      message: "Driver settlement completed",
+      data: {
+        driverId: driver._id,
+        driverCode: driver.driverId,
+        settledTrips:
+          settlementEntries.length,
+        settlements: settlementEntries,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "settleDriverTrips error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

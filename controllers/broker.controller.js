@@ -482,3 +482,693 @@ exports.getBrokerDashboard = async (req, res) => {
     });
   }
 };
+
+exports.getBrokerTripSummary = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { brokerId } = req.params;
+
+    // --------------------------------------------------
+    // 1. Find broker
+    // --------------------------------------------------
+    const broker = await Broker.findOne({
+      _id: brokerId,
+      businessId,
+    }).select(
+      "brokerId companyName contactPerson mobile email"
+    );
+
+    if (!broker) {
+      return res.status(404).json({
+        success: false,
+        message: "Broker not found",
+      });
+    }
+
+    // --------------------------------------------------
+    // 2. Find completed trips containing this broker
+    // --------------------------------------------------
+    const trips = await Trip.find({
+      businessId,
+      tripStatus: "Completed",
+      journeyLegs: {
+        $elemMatch: {
+          brokerId: brokerId,
+          brokerAmount: {
+            $gt: 0,
+          },
+        },
+      },
+    })
+      .populate("vehicleId", "regNo")
+      .sort({
+        completedAt: -1,
+        createdAt: -1,
+      });
+
+    // --------------------------------------------------
+    // 3. Existing settlement records
+    // --------------------------------------------------
+    const settlementTrips =
+      broker.settlement?.trips || [];
+
+    const round = (value) =>
+      Number(Number(value || 0).toFixed(2));
+
+    let totalBrokerAmount = 0;
+    let totalSettledAmount = 0;
+    let totalBalanceAmount = 0;
+
+    const tripData = [];
+
+    // --------------------------------------------------
+    // 4. Process each trip
+    // --------------------------------------------------
+    for (const trip of trips) {
+      const brokerLegs = (
+        trip.journeyLegs || []
+      ).filter(
+        (leg) =>
+          leg.brokerId?.toString() ===
+            brokerId.toString() &&
+          Number(leg.brokerAmount || 0) > 0
+      );
+
+      if (brokerLegs.length === 0) {
+        continue;
+      }
+
+      // Existing settlement for this trip
+      const existingSettlement =
+        settlementTrips.find(
+          (item) =>
+            item.tripId?.toString() ===
+            trip._id.toString()
+        );
+
+      const legs = [];
+
+      for (const leg of brokerLegs) {
+        const brokerAmount = round(
+          leg.brokerAmount || 0
+        );
+
+        // Existing settlement for this leg
+        const existingLeg =
+          existingSettlement?.legs?.find(
+            (item) =>
+              Number(item.legNo) ===
+              Number(leg.legNo)
+          );
+
+        const settledAmount = round(
+          existingLeg?.settledAmount || 0
+        );
+
+        const balanceAmount = round(
+          brokerAmount - settledAmount
+        );
+
+        let status = "Pending";
+
+        if (settledAmount >= brokerAmount) {
+          status = "Settled";
+        } else if (settledAmount > 0) {
+          status = "Partial";
+        }
+
+        // Only show the pending/partial amount in summary
+        totalBrokerAmount += brokerAmount;
+        totalSettledAmount += settledAmount;
+        totalBalanceAmount += Math.max(
+          balanceAmount,
+          0
+        );
+
+        legs.push({
+          legNo: leg.legNo,
+
+          from: leg.from || "",
+          to: leg.to || "",
+
+          brokerId: leg.brokerId,
+
+          brokerAmount,
+
+          settledAmount,
+
+          balanceAmount: Math.max(
+            balanceAmount,
+            0
+          ),
+
+          status,
+        });
+      }
+
+      if (legs.length === 0) {
+        continue;
+      }
+
+      const tripBrokerAmount = round(
+        legs.reduce(
+          (sum, leg) =>
+            sum + Number(
+              leg.brokerAmount || 0
+            ),
+          0
+        )
+      );
+
+      const tripSettledAmount = round(
+        legs.reduce(
+          (sum, leg) =>
+            sum + Number(
+              leg.settledAmount || 0
+            ),
+          0
+        )
+      );
+
+      const tripBalanceAmount = round(
+        legs.reduce(
+          (sum, leg) =>
+            sum + Number(
+              leg.balanceAmount || 0
+            ),
+          0
+        )
+      );
+
+      let tripStatus = "Pending";
+
+      if (
+        tripSettledAmount >=
+        tripBrokerAmount
+      ) {
+        tripStatus = "Settled";
+      } else if (tripSettledAmount > 0) {
+        tripStatus = "Partial";
+      }
+
+      tripData.push({
+        tripId: trip._id,
+
+        tripNo: trip.tripNo,
+
+        vehicleId:
+          trip.vehicleId?._id || null,
+
+        vehicleNo:
+          trip.vehicleId?.regNo || "-",
+
+        journeyType: trip.journeyType,
+
+        legs,
+
+        totalBrokerAmount:
+          tripBrokerAmount,
+
+        totalSettledAmount:
+          tripSettledAmount,
+
+        totalBalanceAmount:
+          tripBalanceAmount,
+
+        status: tripStatus,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        broker: {
+          _id: broker._id,
+          brokerId: broker.brokerId,
+          companyName: broker.companyName,
+          contactPerson:
+            broker.contactPerson,
+          mobile: broker.mobile,
+          email: broker.email,
+        },
+
+        summary: {
+          totalTrips: tripData.length,
+
+          totalBrokerAmount:
+            round(totalBrokerAmount),
+
+          totalSettledAmount:
+            round(totalSettledAmount),
+
+          totalBalanceAmount:
+            round(totalBalanceAmount),
+        },
+
+        trips: tripData,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "getBrokerTripSummary error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.settleBrokerAmount = async (req, res) => {
+  try {
+    const businessId = req.user.businessId;
+    const { brokerId } = req.params;
+
+    const {
+      settlements,
+      remarks,
+    } = req.body;
+
+    // --------------------------------------------------
+    // 1. Validate request
+    // --------------------------------------------------
+    if (
+      !Array.isArray(settlements) ||
+      settlements.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "settlements must be a non-empty array",
+      });
+    }
+
+    // --------------------------------------------------
+    // 2. Find broker
+    // --------------------------------------------------
+    const broker = await Broker.findOne({
+      _id: brokerId,
+      businessId,
+    });
+
+    if (!broker) {
+      return res.status(404).json({
+        success: false,
+        message: "Broker not found",
+      });
+    }
+
+    // --------------------------------------------------
+    // 3. Find requested trips
+    // --------------------------------------------------
+    const tripIds = settlements.map(
+      (item) => item.tripId
+    );
+
+    const trips = await Trip.find({
+      businessId,
+      _id: {
+        $in: tripIds,
+      },
+      tripStatus: "Completed",
+    }).populate(
+      "vehicleId",
+      "regNo"
+    );
+
+    if (trips.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "No completed trips found",
+      });
+    }
+
+    // --------------------------------------------------
+    // 4. Initialize settlement
+    // --------------------------------------------------
+    if (!broker.settlement) {
+      broker.settlement = {
+        trips: [],
+      };
+    }
+
+    if (
+      !Array.isArray(
+        broker.settlement.trips
+      )
+    ) {
+      broker.settlement.trips = [];
+    }
+
+    const round = (value) =>
+      Number(Number(value || 0).toFixed(2));
+
+    const settledResults = [];
+
+    // --------------------------------------------------
+    // 5. Process requested settlements
+    // --------------------------------------------------
+    for (const requestItem of settlements) {
+      const trip = trips.find(
+        (item) =>
+          item._id.toString() ===
+          requestItem.tripId.toString()
+      );
+
+      if (!trip) {
+        continue;
+      }
+
+      if (
+        !Array.isArray(
+          requestItem.legs
+        ) ||
+        requestItem.legs.length === 0
+      ) {
+        continue;
+      }
+
+      // ----------------------------------------------
+      // Existing settlement for this trip
+      // ----------------------------------------------
+      let settlementTrip =
+        broker.settlement.trips.find(
+          (item) =>
+            item.tripId?.toString() ===
+            trip._id.toString()
+        );
+
+      // ----------------------------------------------
+      // Create settlement trip if not existing
+      // ----------------------------------------------
+      if (!settlementTrip) {
+        settlementTrip = {
+          tripId: trip._id,
+
+          tripNo: trip.tripNo,
+
+          vehicleId:
+            trip.vehicleId?._id || null,
+
+          vehicleNo:
+            trip.vehicleId?.regNo || "-",
+
+          journeyType:
+            trip.journeyType,
+
+          legs: [],
+
+          totalBrokerAmount: 0,
+
+          totalSettledAmount: 0,
+
+          totalBalanceAmount: 0,
+
+          status: "Pending",
+
+          settledAt: null,
+
+          remarks: remarks || "",
+        };
+
+        broker.settlement.trips.push(
+          settlementTrip
+        );
+      }
+
+      // ----------------------------------------------
+      // Process each selected leg
+      // ----------------------------------------------
+      for (const requestLeg of requestItem.legs) {
+        const tripLeg =
+          trip.journeyLegs?.find(
+            (leg) =>
+              Number(leg.legNo) ===
+              Number(requestLeg.legNo)
+          );
+
+        if (!tripLeg) {
+          continue;
+        }
+
+        // Make sure this leg belongs to broker
+        if (
+          tripLeg.brokerId?.toString() !==
+          brokerId.toString()
+        ) {
+          continue;
+        }
+
+        const brokerAmount = round(
+          tripLeg.brokerAmount || 0
+        );
+
+        if (brokerAmount <= 0) {
+          continue;
+        }
+
+        // --------------------------------------------
+        // Requested settlement amount
+        // --------------------------------------------
+        let requestedAmount = round(
+          requestLeg.settledAmount || 0
+        );
+
+        if (requestedAmount <= 0) {
+          continue;
+        }
+
+        // --------------------------------------------
+        // Existing settlement leg
+        // --------------------------------------------
+        let settlementLeg =
+          settlementTrip.legs.find(
+            (item) =>
+              Number(item.legNo) ===
+              Number(tripLeg.legNo)
+          );
+
+        // --------------------------------------------
+        // Create settlement leg
+        // --------------------------------------------
+        if (!settlementLeg) {
+          settlementLeg = {
+            legNo: Number(
+              tripLeg.legNo
+            ),
+
+            from:
+              tripLeg.from || "",
+
+            to:
+              tripLeg.to || "",
+
+            brokerAmount,
+
+            settledAmount: 0,
+
+            balanceAmount: brokerAmount,
+
+            status: "Pending",
+          };
+
+          settlementTrip.legs.push(
+            settlementLeg
+          );
+        }
+
+        // --------------------------------------------
+        // Don't allow over-settlement
+        // --------------------------------------------
+        const currentSettledAmount =
+          round(
+            settlementLeg.settledAmount
+          );
+
+        const currentBalance =
+          round(
+            brokerAmount -
+              currentSettledAmount
+          );
+
+        if (currentBalance <= 0) {
+          continue;
+        }
+
+        if (
+          requestedAmount >
+          currentBalance
+        ) {
+          requestedAmount =
+            currentBalance;
+        }
+
+        // --------------------------------------------
+        // Update settlement leg
+        // --------------------------------------------
+        settlementLeg.settledAmount =
+          round(
+            currentSettledAmount +
+              requestedAmount
+          );
+
+        settlementLeg.balanceAmount =
+          round(
+            brokerAmount -
+              settlementLeg.settledAmount
+          );
+
+        if (
+          settlementLeg.balanceAmount <= 0
+        ) {
+          settlementLeg.balanceAmount = 0;
+
+          settlementLeg.status =
+            "Settled";
+        } else if (
+          settlementLeg.settledAmount > 0
+        ) {
+          settlementLeg.status =
+            "Partial";
+        } else {
+          settlementLeg.status =
+            "Pending";
+        }
+      }
+
+      // ----------------------------------------------
+      // Recalculate trip totals
+      // ----------------------------------------------
+      settlementTrip.totalBrokerAmount =
+        round(
+          settlementTrip.legs.reduce(
+            (sum, leg) =>
+              sum +
+              Number(
+                leg.brokerAmount || 0
+              ),
+            0
+          )
+        );
+
+      settlementTrip.totalSettledAmount =
+        round(
+          settlementTrip.legs.reduce(
+            (sum, leg) =>
+              sum +
+              Number(
+                leg.settledAmount || 0
+              ),
+            0
+          )
+        );
+
+      settlementTrip.totalBalanceAmount =
+        round(
+          settlementTrip.legs.reduce(
+            (sum, leg) =>
+              sum +
+              Number(
+                leg.balanceAmount || 0
+              ),
+            0
+          )
+        );
+
+      // ----------------------------------------------
+      // Trip settlement status
+      // ----------------------------------------------
+      if (
+        settlementTrip.totalSettledAmount >=
+        settlementTrip.totalBrokerAmount
+      ) {
+        settlementTrip.status =
+          "Settled";
+
+        settlementTrip.settledAt =
+          new Date();
+      } else if (
+        settlementTrip.totalSettledAmount > 0
+      ) {
+        settlementTrip.status =
+          "Partial";
+
+        settlementTrip.settledAt = null;
+      } else {
+        settlementTrip.status =
+          "Pending";
+      }
+
+      settlementTrip.remarks =
+        remarks || "";
+
+      settledResults.push({
+        tripId: trip._id,
+        tripNo: trip.tripNo,
+        status: settlementTrip.status,
+        totalBrokerAmount:
+          settlementTrip.totalBrokerAmount,
+        totalSettledAmount:
+          settlementTrip.totalSettledAmount,
+        totalBalanceAmount:
+          settlementTrip.totalBalanceAmount,
+      });
+    }
+
+    // --------------------------------------------------
+    // 6. Recalculate broker outstanding amount
+    // --------------------------------------------------
+    const allSettlementTrips =
+      broker.settlement.trips || [];
+
+    const outstandingAmount =
+      allSettlementTrips.reduce(
+        (sum, trip) =>
+          sum +
+          Number(
+            trip.totalBalanceAmount || 0
+          ),
+        0
+      );
+
+    broker.outstandingAmount =
+      round(outstandingAmount);
+
+    await broker.save();
+
+    // --------------------------------------------------
+    // 7. Response
+    // --------------------------------------------------
+    return res.status(200).json({
+      success: true,
+      message:
+        "Broker settlement completed",
+
+      data: {
+        broker: {
+          _id: broker._id,
+          brokerId: broker.brokerId,
+          companyName:
+            broker.companyName,
+        },
+
+        settlements:
+          settledResults,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "settleBrokerAmount error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

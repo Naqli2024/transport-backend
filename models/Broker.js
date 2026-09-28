@@ -77,6 +77,109 @@ const brokerSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+
+    settlement: {
+      trips: [
+        {
+          tripId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Trip",
+            required: true,
+          },
+
+          tripNo: {
+            type: String,
+          },
+
+          vehicleId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Vehicle",
+          },
+
+          vehicleNo: {
+            type: String,
+          },
+
+          journeyType: {
+            type: String,
+          },
+
+          legs: [
+            {
+              legNo: {
+                type: Number,
+                required: true,
+              },
+
+              from: {
+                type: String,
+              },
+
+              to: {
+                type: String,
+              },
+
+              brokerAmount: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              settledAmount: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              balanceAmount: {
+                type: Number,
+                default: 0,
+                min: 0,
+              },
+
+              status: {
+                type: String,
+                enum: ["Pending", "Partial", "Settled"],
+                default: "Pending",
+              },
+            },
+          ],
+
+          totalBrokerAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          totalSettledAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          totalBalanceAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+
+          status: {
+            type: String,
+            enum: ["Pending", "Partial", "Settled"],
+            default: "Pending",
+          },
+
+          settledAt: {
+            type: Date,
+          },
+
+          remarks: {
+            type: String,
+            trim: true,
+          },
+        },
+      ],
+    },
   },
   {
     timestamps: true,
@@ -90,9 +193,8 @@ brokerSchema.index(
   },
   {
     unique: true,
-  }
+  },
 );
-
 
 brokerSchema.pre("save", async function () {
   if (this.brokerId) return;
@@ -108,10 +210,7 @@ brokerSchema.pre("save", async function () {
   let next = 1;
 
   if (lastBroker && lastBroker.brokerId) {
-    const lastNumber = parseInt(
-      lastBroker.brokerId.split("-")[1],
-      10
-    );
+    const lastNumber = parseInt(lastBroker.brokerId.split("-")[1], 10);
 
     if (!isNaN(lastNumber)) {
       next = lastNumber + 1;

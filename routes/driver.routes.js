@@ -48,8 +48,8 @@ router.get(
   getDriverSettlement
 );
 
-router.put(
-  "/:driverId/settle",
+router.post(
+  "/:driverId/settlement",
   auth,
   settleDriverTrips
 );
