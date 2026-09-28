@@ -26,6 +26,7 @@ const getBucket = (businessId) => {
 };
 
 exports.uploadFile = async (file, businessId, folder) => {
+  console.log("businessId:", businessId)
   const bucket = getBucket(businessId);
 
   const fileName = `businesses/${businessId}/${folder}/${Date.now()}-${file.originalname}`;

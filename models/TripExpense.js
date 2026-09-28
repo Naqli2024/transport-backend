@@ -34,6 +34,7 @@ const tripExpenseSchema = new mongoose.Schema(
         "Parking",
         "Repair",
         "Miscellaneous",
+        "PC"
       ],
       required: true,
     },
@@ -46,7 +47,7 @@ const tripExpenseSchema = new mongoose.Schema(
 
     filePath: {
       type: String,
-      required: true,
+      required: false,
     },
 
     remarks: {

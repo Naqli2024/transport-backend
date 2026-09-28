@@ -136,6 +136,12 @@ const tripSchema = new mongoose.Schema(
           ref: "Broker",
         },
 
+        brokerAmount: {
+          type: Number,
+          min: 0,
+          default: 0,
+        },
+
         // -----------------------------------------------------
         // CONSIGNMENT
         // -----------------------------------------------------
