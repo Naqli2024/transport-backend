@@ -11,4 +11,6 @@ router.get("/user-details", auth, controller.getUserProfile);
 
 router.post("/authenticate", auth, controller.authenticateAdmin);
 
+router.post("/change-password", controller.changeUserPassword);
+
 module.exports = router;
