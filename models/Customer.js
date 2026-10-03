@@ -113,7 +113,7 @@ customerSchema.index(
 AUTO CUSTOMER ID — PER BUSINESS
 ===================================== */
 
-customerSchema.pre("save", async function () {
+customerSchema.pre("validate", async function () {
   if (this.customerId) return;
 
   const Customer = mongoose.model("Customer");
