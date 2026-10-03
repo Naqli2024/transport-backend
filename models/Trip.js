@@ -48,6 +48,12 @@ const tripSchema = new mongoose.Schema(
       ref: "VendorVehicle",
     },
 
+    vendorAmount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+
     // =========================================================
     // JOURNEY
     // =========================================================

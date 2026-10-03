@@ -119,7 +119,7 @@ exports.authenticateAdmin = async (req, res) => {
     let business;
     // ================================ // LOGIN USING USERNAME // ================================
     if (username) {
-      user = await User.findOne({ username: username.toLowerCase() });
+      user = await User.findOne({ username: username });
       if (!user) {
         return res.status(401).json({
           success: false,

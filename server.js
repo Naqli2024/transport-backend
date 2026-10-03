@@ -21,6 +21,7 @@ const inspection = require("./routes/inspection.routes");
 const customer = require("./routes/customer.routes");
 const broker = require("./routes/broker.routes");
 const driverAuthRoutes = require("./routes/driverAuth.routes");
+const location = require("./routes/locationRoutes");
 const cors = require("cors");
 const path = require("path");
 
@@ -53,6 +54,7 @@ app.use("/api/inspection", inspection);
 app.use("/api/customer", customer);
 app.use("/api/broker", broker);
 app.use("/api/driver/auth", driverAuthRoutes);
+app.use("/api/location", location);
 
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
