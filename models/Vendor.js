@@ -11,7 +11,7 @@ const vendorSchema = new mongoose.Schema(
 
     vendorCode: {
       type: String,
-      unique: true,
+      required: true,
     },
 
     companyName: {
@@ -48,29 +48,50 @@ const vendorSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-vendorSchema.pre("save", async function () {
+/*
+  Multitenant unique index
+
+  Same vendorCode can exist in different businesses,
+  but cannot be duplicated inside the same business.
+*/
+vendorSchema.index(
+  {
+    businessId: 1,
+    vendorCode: 1,
+  },
+  {
+    unique: true,
+  },
+);
+
+/*
+  Generate vendorCode before validation
+*/
+vendorSchema.pre("validate", async function () {
   if (this.vendorCode) return;
 
   const Vendor = mongoose.model("Vendor");
 
-  const lastVendor = await Vendor.findOne()
-    .sort({ createdAt: -1 });
+  const lastVendor = await Vendor.findOne({
+    businessId: this.businessId,
+  }).sort({
+    createdAt: -1,
+  });
 
   let nextNumber = 1;
 
   if (lastVendor?.vendorCode) {
-    nextNumber =
-      parseInt(
-        lastVendor.vendorCode.replace("VEN", "")
-      ) + 1;
+    const lastNumber = parseInt(lastVendor.vendorCode.replace("VEN", ""), 10);
+
+    if (!isNaN(lastNumber)) {
+      nextNumber = lastNumber + 1;
+    }
   }
 
-  this.vendorCode =
-    `VEN${String(nextNumber).padStart(5, "0")}`;
+  this.vendorCode = `VEN${String(nextNumber).padStart(5, "0")}`;
 });
 
-module.exports =
-  mongoose.model("Vendor", vendorSchema);
+module.exports = mongoose.model("Vendor", vendorSchema);

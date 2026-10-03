@@ -196,7 +196,7 @@ brokerSchema.index(
   },
 );
 
-brokerSchema.pre("save", async function () {
+brokerSchema.pre("validate", async function () {
   if (this.brokerId) return;
 
   const Broker = mongoose.model("Broker");
