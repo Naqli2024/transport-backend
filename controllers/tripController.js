@@ -3162,12 +3162,12 @@ exports.completeWeighbridge = async (req, res) => {
     // RECEIPT VALIDATION
     // =========================================================
 
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Weighbridge receipt is required",
-      });
-    }
+    // if (!req.file) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Weighbridge receipt is required",
+    //   });
+    // }
 
     // =========================================================
     // UPLOAD WEIGHBRIDGE RECEIPT
