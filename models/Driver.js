@@ -130,8 +130,54 @@ const driverSchema = new mongoose.Schema(
     // =================================
     // DRIVER SETTLEMENT
     // =================================
-
     settlement: {
+      // =================================
+      // DRIVER LEVEL SETTLEMENT
+      // =================================
+
+      totalPayable: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      settledAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      balanceAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      status: {
+        type: String,
+        enum: ["Pending", "Partial", "Settled"],
+        default: "Pending",
+      },
+
+      lastSettledAt: {
+        type: Date,
+      },
+
+      remarks: {
+        type: String,
+        trim: true,
+      },
+
+      // =================================
+      // TRIP / LEG CALCULATION HISTORY
+      // =================================
+      // These are only used to display how
+      // totalPayable was calculated.
+      //
+      // Settlement is NOT maintained per trip
+      // or per leg.
+      // =================================
+
       trips: [
         {
           tripId: {
@@ -200,6 +246,10 @@ const driverSchema = new mongoose.Schema(
                 min: 0,
               },
 
+              // =================================
+              // EXPENSE BREAKDOWN
+              // =================================
+
               PC: {
                 type: Number,
                 default: 0,
@@ -248,6 +298,10 @@ const driverSchema = new mongoose.Schema(
                 min: 0,
               },
 
+              // =================================
+              // CALCULATED AMOUNTS
+              // =================================
+
               actualExpense: {
                 type: Number,
                 default: 0,
@@ -267,6 +321,10 @@ const driverSchema = new mongoose.Schema(
               },
             },
           ],
+
+          // =================================
+          // TRIP CALCULATION TOTALS
+          // =================================
 
           totalDriverSalary: {
             type: Number,
@@ -296,27 +354,6 @@ const driverSchema = new mongoose.Schema(
             type: Number,
             default: 0,
             min: 0,
-          },
-
-          status: {
-            type: String,
-            enum: ["Pending", "Partial", "Settled"],
-            default: "Pending",
-          },
-
-          settledAmount: {
-            type: Number,
-            default: 0,
-            min: 0,
-          },
-
-          settledAt: {
-            type: Date,
-          },
-
-          remarks: {
-            type: String,
-            trim: true,
           },
         },
       ],

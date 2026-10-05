@@ -9,10 +9,18 @@ const vendorSchema = new mongoose.Schema(
       index: true,
     },
 
+    // =================================
+    // VENDOR ID
+    // =================================
+
     vendorCode: {
       type: String,
       required: true,
     },
+
+    // =================================
+    // BASIC INFORMATION
+    // =================================
 
     companyName: {
       type: String,
@@ -44,6 +52,106 @@ const vendorSchema = new mongoose.Schema(
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
+    },
+
+    // =================================
+    // VENDOR SETTLEMENT
+    // =================================
+
+    settlement: {
+      // ---------------------------------
+      // DRIVER-STYLE VENDOR LEVEL TOTALS
+      // ---------------------------------
+
+      totalPayable: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      settledAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      balanceAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      status: {
+        type: String,
+        enum: ["Pending", "Partial", "Settled"],
+        default: "Pending",
+      },
+
+      lastSettledAt: {
+        type: Date,
+      },
+
+      remarks: {
+        type: String,
+        trim: true,
+      },
+
+      // ---------------------------------
+      // TRIP CALCULATION / DISPLAY HISTORY
+      // ---------------------------------
+      //
+      // These trips are NOT individually settled.
+      //
+      // They are only used to show:
+      // - Which completed trips generated
+      //   the vendor payable
+      // - Vendor amount for each trip
+      //
+      // Actual settlement remains vendor-level.
+      //
+
+      trips: [
+        {
+          tripId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Trip",
+            required: true,
+          },
+
+          tripNo: {
+            type: String,
+          },
+
+          vehicleId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Vehicle",
+          },
+
+          vehicleNo: {
+            type: String,
+          },
+
+          vehicleCategory: {
+            type: String,
+          },
+
+          vendorVehicleId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "VendorVehicle",
+          },
+
+          journeyType: {
+            type: String,
+          },
+
+          // Amount payable to vendor
+          vendorAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+          },
+        },
+      ],
     },
   },
   {
