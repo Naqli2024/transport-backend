@@ -3,6 +3,7 @@ const Vehicle = require("../models/Vehicle");
 const Trip = require("../models/Trip");
 const FuelEntry = require("../models/FuelEntry");
 const TripExpense = require("../models/TripExpense");
+const mongoose = require("mongoose");
 
 const {
   uploadFile,
