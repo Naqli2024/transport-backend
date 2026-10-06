@@ -490,12 +490,13 @@ exports.getBrokerTripSummary = async (req, res) => {
 
     // --------------------------------------------------
     // 1. Find broker
+    // IMPORTANT: settlement must be selected
     // --------------------------------------------------
     const broker = await Broker.findOne({
       _id: brokerId,
       businessId,
     }).select(
-      "brokerId companyName contactPerson mobile email"
+      "brokerId companyName contactPerson mobile email settlement"
     );
 
     if (!broker) {
@@ -558,7 +559,9 @@ exports.getBrokerTripSummary = async (req, res) => {
         continue;
       }
 
+      // ------------------------------------------------
       // Existing settlement for this trip
+      // ------------------------------------------------
       const existingSettlement =
         settlementTrips.find(
           (item) =>
@@ -568,12 +571,17 @@ exports.getBrokerTripSummary = async (req, res) => {
 
       const legs = [];
 
+      // ------------------------------------------------
+      // Process each broker leg
+      // ------------------------------------------------
       for (const leg of brokerLegs) {
         const brokerAmount = round(
           leg.brokerAmount || 0
         );
 
+        // ----------------------------------------------
         // Existing settlement for this leg
+        // ----------------------------------------------
         const existingLeg =
           existingSettlement?.legs?.find(
             (item) =>
@@ -581,34 +589,57 @@ exports.getBrokerTripSummary = async (req, res) => {
               Number(leg.legNo)
           );
 
+        // ----------------------------------------------
+        // Settled amount from broker settlement
+        // ----------------------------------------------
         const settledAmount = round(
           existingLeg?.settledAmount || 0
         );
 
+        // ----------------------------------------------
+        // Calculate current balance
+        // ----------------------------------------------
         const balanceAmount = round(
-          brokerAmount - settledAmount
+          Math.max(
+            brokerAmount - settledAmount,
+            0
+          )
         );
 
+        // ----------------------------------------------
+        // Determine leg status
+        // ----------------------------------------------
         let status = "Pending";
 
-        if (settledAmount >= brokerAmount) {
+        if (
+          settledAmount >=
+          brokerAmount
+        ) {
           status = "Settled";
-        } else if (settledAmount > 0) {
+        } else if (
+          settledAmount > 0
+        ) {
           status = "Partial";
         }
 
-        // Only show the pending/partial amount in summary
+        // ----------------------------------------------
+        // Add to overall summary
+        // ----------------------------------------------
         totalBrokerAmount += brokerAmount;
-        totalSettledAmount += settledAmount;
-        totalBalanceAmount += Math.max(
-          balanceAmount,
-          0
-        );
 
+        totalSettledAmount += settledAmount;
+
+        totalBalanceAmount +=
+          balanceAmount;
+
+        // ----------------------------------------------
+        // Add leg response
+        // ----------------------------------------------
         legs.push({
           legNo: leg.legNo,
 
           from: leg.from || "",
+
           to: leg.to || "",
 
           brokerId: leg.brokerId,
@@ -617,10 +648,7 @@ exports.getBrokerTripSummary = async (req, res) => {
 
           settledAmount,
 
-          balanceAmount: Math.max(
-            balanceAmount,
-            0
-          ),
+          balanceAmount,
 
           status,
         });
@@ -630,10 +658,14 @@ exports.getBrokerTripSummary = async (req, res) => {
         continue;
       }
 
+      // ------------------------------------------------
+      // Trip totals
+      // ------------------------------------------------
       const tripBrokerAmount = round(
         legs.reduce(
           (sum, leg) =>
-            sum + Number(
+            sum +
+            Number(
               leg.brokerAmount || 0
             ),
           0
@@ -643,7 +675,8 @@ exports.getBrokerTripSummary = async (req, res) => {
       const tripSettledAmount = round(
         legs.reduce(
           (sum, leg) =>
-            sum + Number(
+            sum +
+            Number(
               leg.settledAmount || 0
             ),
           0
@@ -653,13 +686,17 @@ exports.getBrokerTripSummary = async (req, res) => {
       const tripBalanceAmount = round(
         legs.reduce(
           (sum, leg) =>
-            sum + Number(
+            sum +
+            Number(
               leg.balanceAmount || 0
             ),
           0
         )
       );
 
+      // ------------------------------------------------
+      // Trip status
+      // ------------------------------------------------
       let tripStatus = "Pending";
 
       if (
@@ -667,10 +704,15 @@ exports.getBrokerTripSummary = async (req, res) => {
         tripBrokerAmount
       ) {
         tripStatus = "Settled";
-      } else if (tripSettledAmount > 0) {
+      } else if (
+        tripSettledAmount > 0
+      ) {
         tripStatus = "Partial";
       }
 
+      // ------------------------------------------------
+      // Trip response
+      // ------------------------------------------------
       tripData.push({
         tripId: trip._id,
 
@@ -682,7 +724,8 @@ exports.getBrokerTripSummary = async (req, res) => {
         vehicleNo:
           trip.vehicleId?.regNo || "-",
 
-        journeyType: trip.journeyType,
+        journeyType:
+          trip.journeyType,
 
         legs,
 
@@ -699,22 +742,35 @@ exports.getBrokerTripSummary = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // 5. Final response
+    // --------------------------------------------------
     return res.status(200).json({
       success: true,
 
       data: {
         broker: {
           _id: broker._id,
-          brokerId: broker.brokerId,
-          companyName: broker.companyName,
+
+          brokerId:
+            broker.brokerId,
+
+          companyName:
+            broker.companyName,
+
           contactPerson:
             broker.contactPerson,
-          mobile: broker.mobile,
-          email: broker.email,
+
+          mobile:
+            broker.mobile,
+
+          email:
+            broker.email,
         },
 
         summary: {
-          totalTrips: tripData.length,
+          totalTrips:
+            tripData.length,
 
           totalBrokerAmount:
             round(totalBrokerAmount),
