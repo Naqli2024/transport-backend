@@ -3838,6 +3838,7 @@ exports.createFuelEntry = async (req, res) => {
     }
 
     trip.totalFuelEntries.push({
+      fuelEntryId: fuel._id,
       date: new Date(),
       quantity: parsedQuantity,
       amount,
@@ -4091,10 +4092,18 @@ exports.updateFuelEntry = async (req, res) => {
       fuelType !== undefined ? fuelType : fuel.fuelType;
 
     const newQuantity =
-      quantity !== undefined ? Number(quantity) : Number(fuel.quantity);
+      quantity !== undefined
+        ? Number(quantity)
+        : Number(fuel.quantity);
 
     const newRate =
-      rate !== undefined ? Number(rate) : Number(fuel.rate);
+      rate !== undefined
+        ? Number(rate)
+        : Number(fuel.rate);
+
+    // ==============================
+    // VALIDATION
+    // ==============================
 
     if (!newFuelType) {
       return res.status(400).json({
@@ -4112,9 +4121,11 @@ exports.updateFuelEntry = async (req, res) => {
 
     if (
       quantity !== undefined &&
-      (quantity === "" ||
+      (
+        quantity === "" ||
         Number.isNaN(newQuantity) ||
-        newQuantity <= 0)
+        newQuantity <= 0
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -4124,9 +4135,11 @@ exports.updateFuelEntry = async (req, res) => {
 
     if (
       rate !== undefined &&
-      (rate === "" ||
+      (
+        rate === "" ||
         Number.isNaN(newRate) ||
-        newRate < 0)
+        newRate < 0
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -4134,7 +4147,10 @@ exports.updateFuelEntry = async (req, res) => {
       });
     }
 
-    // Bill is optional
+    // ==============================
+    // BILL
+    // ==============================
+
     let billPath = fuel.billPath || null;
 
     if (req.file) {
@@ -4153,20 +4169,32 @@ exports.updateFuelEntry = async (req, res) => {
       );
     }
 
-    const oldQuantity = Number(fuel.quantity || 0);
-    const oldAmount = Number(fuel.amount || 0);
+    // ==============================
+    // CALCULATE NEW AMOUNT
+    // ==============================
 
     const newAmount = newQuantity * newRate;
 
+    // ==============================
+    // UPDATE FUEL ENTRY
+    // ==============================
+
     fuel.fuelStation =
-      fuelStation !== undefined ? fuelStation : fuel.fuelStation;
+      fuelStation !== undefined
+        ? fuelStation
+        : fuel.fuelStation;
 
     fuel.location =
-      location !== undefined ? location : fuel.location;
+      location !== undefined
+        ? location
+        : fuel.location;
 
     fuel.fuelType = newFuelType;
+
     fuel.quantity = newQuantity;
+
     fuel.rate = newRate;
+
     fuel.amount = newAmount;
 
     fuel.paymentMode =
@@ -4175,58 +4203,100 @@ exports.updateFuelEntry = async (req, res) => {
         : fuel.paymentMode;
 
     fuel.billNo =
-      billNo !== undefined ? billNo : fuel.billNo;
+      billNo !== undefined
+        ? billNo
+        : fuel.billNo;
 
     fuel.billPath = billPath;
 
     fuel.remarks =
-      remarks !== undefined ? remarks : fuel.remarks;
+      remarks !== undefined
+        ? remarks
+        : fuel.remarks;
 
     await fuel.save();
 
-    /*
-     * Recalculate overall trip fuel totals
-     * from the actual FuelEntry collection.
-     */
+    // ==============================
+    // UPDATE TRIP TOTALS
+    // ==============================
+
     const entries = await FuelEntry.find({
       businessId,
       tripId: trip._id,
     });
 
     trip.totalFuelQuantity = entries.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
+      (sum, item) =>
+        sum + Number(item.quantity || 0),
       0,
     );
 
     trip.totalFuelCost = entries.reduce(
-      (sum, item) => sum + Number(item.amount || 0),
+      (sum, item) =>
+        sum + Number(item.amount || 0),
       0,
     );
 
-    /*
-     * IMPORTANT:
-     * totalFuelEntries is an embedded array.
-     *
-     * Do NOT do:
-     * trip.totalFuelEntries = entries.length;
-     *
-     * The exact update here depends on the embedded
-     * totalFuelEntries schema.
-     */
+    // ==============================
+    // UPDATE EMBEDDED FUEL HISTORY
+    // ==============================
+
+    if (!Array.isArray(trip.totalFuelEntries)) {
+      trip.totalFuelEntries = [];
+    }
+
+    const fuelHistoryEntry = trip.totalFuelEntries.find(
+      (item) =>
+        item.fuelEntryId &&
+        item.fuelEntryId.toString() === fuel._id.toString(),
+    );
+
+    if (fuelHistoryEntry) {
+      fuelHistoryEntry.quantity = newQuantity;
+      fuelHistoryEntry.amount = newAmount;
+      fuelHistoryEntry.remarks = remarks !== undefined
+        ? remarks
+        : fuelHistoryEntry.remarks;
+    } else {
+      /*
+       * Fallback for old records that were created
+       * before fuelEntryId was added.
+       *
+       * If no matching history entry exists,
+       * create one for this FuelEntry.
+       */
+      trip.totalFuelEntries.push({
+        fuelEntryId: fuel._id,
+        date: fuel.createdAt || new Date(),
+        quantity: newQuantity,
+        amount: newAmount,
+        remarks: remarks || "",
+      });
+    }
 
     await trip.save();
+
+    // ==============================
+    // RESPONSE
+    // ==============================
 
     return res.status(200).json({
       success: true,
       message: "Fuel entry updated successfully",
-      data: fuel,
+      data: {
+        fuel,
+        totalFuelQuantity: trip.totalFuelQuantity,
+        totalFuelCost: trip.totalFuelCost,
+        totalFuelEntries: trip.totalFuelEntries,
+      },
     });
   } catch (error) {
     console.error("updateFuelEntry error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to update fuel entry",
+      message:
+        error.message || "Failed to update fuel entry",
     });
   }
 };

@@ -530,29 +530,14 @@ const tripSchema = new mongoose.Schema(
 
     totalFuelEntries: [
       {
-        date: {
-          type: Date,
+        fuelEntryId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "FuelEntry",
         },
-
-        quantity: {
-          type: Number,
-          min: 0,
-        },
-
-        amount: {
-          type: Number,
-          min: 0,
-        },
-
-        // odometer: {
-        //   type: Number,
-        //   min: 0,
-        // },
-
-        remarks: {
-          type: String,
-          trim: true,
-        },
+        date: Date,
+        quantity: Number,
+        amount: Number,
+        remarks: String,
       },
     ],
 
