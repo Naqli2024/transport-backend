@@ -800,31 +800,43 @@ exports.getBrokerTripSummary = async (req, res) => {
 
 exports.settleBrokerAmount = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.user?.businessId;
     const { brokerId } = req.params;
 
     const {
       settlements,
       remarks,
-    } = req.body;
+    } = req.body || {};
 
     // --------------------------------------------------
-    // 1. Validate request
+    // 1. Validate authentication
     // --------------------------------------------------
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Business authentication details are missing",
+      });
+    }
+
+    // --------------------------------------------------
+    // 2. Validate request
+    // --------------------------------------------------
+
     if (
       !Array.isArray(settlements) ||
       settlements.length === 0
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "settlements must be a non-empty array",
+        message: "settlements must be a non-empty array",
       });
     }
 
     // --------------------------------------------------
-    // 2. Find broker
+    // 3. Find broker
     // --------------------------------------------------
+
     const broker = await Broker.findOne({
       _id: brokerId,
       businessId,
@@ -837,90 +849,132 @@ exports.settleBrokerAmount = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // 3. Find requested trips
-    // --------------------------------------------------
-    const tripIds = settlements.map(
-      (item) => item.tripId
-    );
-
-    const trips = await Trip.find({
-      businessId,
-      _id: {
-        $in: tripIds,
-      },
-      tripStatus: "Completed",
-    }).populate(
-      "vehicleId",
-      "regNo"
-    );
-
-    if (trips.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "No completed trips found",
-      });
-    }
-
-    // --------------------------------------------------
-    // 4. Initialize settlement
-    // --------------------------------------------------
-    if (!broker.settlement) {
-      broker.settlement = {
-        trips: [],
-      };
-    }
-
-    if (
-      !Array.isArray(
-        broker.settlement.trips
-      )
-    ) {
-      broker.settlement.trips = [];
-    }
-
     const round = (value) =>
       Number(Number(value || 0).toFixed(2));
 
     const settledResults = [];
 
     // --------------------------------------------------
-    // 5. Process requested settlements
+    // 4. Process each requested trip
     // --------------------------------------------------
+
     for (const requestItem of settlements) {
-      const trip = trips.find(
-        (item) =>
-          item._id.toString() ===
-          requestItem.tripId.toString()
+      const { tripId, legs } = requestItem;
+
+      if (!tripId) {
+        continue;
+      }
+
+      if (!Array.isArray(legs) || legs.length === 0) {
+        continue;
+      }
+
+      // ------------------------------------------------
+      // Find completed trip
+      // ------------------------------------------------
+
+      const trip = await Trip.findOne({
+        _id: tripId,
+        businessId,
+        tripStatus: "Completed",
+      }).populate(
+        "vehicleId",
+        "regNo",
       );
 
       if (!trip) {
         continue;
       }
 
-      if (
-        !Array.isArray(
-          requestItem.legs
-        ) ||
-        requestItem.legs.length === 0
-      ) {
+      // ------------------------------------------------
+      // Find only requested valid broker legs
+      // ------------------------------------------------
+
+      const validRequestedLegs = [];
+
+      for (const requestLeg of legs) {
+        const tripLeg = trip.journeyLegs?.find(
+          (leg) =>
+            Number(leg.legNo) ===
+            Number(requestLeg.legNo),
+        );
+
+        if (!tripLeg) {
+          continue;
+        }
+
+        // ----------------------------------------------
+        // Make sure this leg belongs to this broker
+        // ----------------------------------------------
+
+        if (
+          !tripLeg.brokerId ||
+          tripLeg.brokerId.toString() !== brokerId.toString()
+        ) {
+          continue;
+        }
+
+        const brokerAmount = round(
+          tripLeg.brokerAmount || 0,
+        );
+
+        if (brokerAmount <= 0) {
+          continue;
+        }
+
+        let requestedAmount = round(
+          requestLeg.settledAmount || 0,
+        );
+
+        if (requestedAmount <= 0) {
+          continue;
+        }
+
+        validRequestedLegs.push({
+          requestLeg,
+          tripLeg,
+          brokerAmount,
+          requestedAmount,
+        });
+      }
+
+      // ------------------------------------------------
+      // If no valid legs, don't create empty settlement
+      // ------------------------------------------------
+
+      if (validRequestedLegs.length === 0) {
         continue;
       }
 
-      // ----------------------------------------------
-      // Existing settlement for this trip
-      // ----------------------------------------------
+      // ------------------------------------------------
+      // Initialize settlement
+      // ------------------------------------------------
+
+      if (!broker.settlement) {
+        broker.settlement = {
+          trips: [],
+        };
+      }
+
+      if (!Array.isArray(broker.settlement.trips)) {
+        broker.settlement.trips = [];
+      }
+
+      // ------------------------------------------------
+      // Find existing settlement trip
+      // ------------------------------------------------
+
       let settlementTrip =
         broker.settlement.trips.find(
           (item) =>
             item.tripId?.toString() ===
-            trip._id.toString()
+            trip._id.toString(),
         );
 
-      // ----------------------------------------------
-      // Create settlement trip if not existing
-      // ----------------------------------------------
+      // ------------------------------------------------
+      // Create settlement trip
+      // ------------------------------------------------
+
       if (!settlementTrip) {
         settlementTrip = {
           tripId: trip._id,
@@ -952,69 +1006,43 @@ exports.settleBrokerAmount = async (req, res) => {
         };
 
         broker.settlement.trips.push(
-          settlementTrip
+          settlementTrip,
         );
       }
 
-      // ----------------------------------------------
-      // Process each selected leg
-      // ----------------------------------------------
-      for (const requestLeg of requestItem.legs) {
-        const tripLeg =
-          trip.journeyLegs?.find(
-            (leg) =>
-              Number(leg.legNo) ===
-              Number(requestLeg.legNo)
-          );
+      // ------------------------------------------------
+      // Process valid legs
+      // ------------------------------------------------
 
-        if (!tripLeg) {
-          continue;
-        }
+      for (const item of validRequestedLegs) {
+        const {
+          requestLeg,
+          tripLeg,
+          brokerAmount,
+        } = item;
 
-        // Make sure this leg belongs to broker
-        if (
-          tripLeg.brokerId?.toString() !==
-          brokerId.toString()
-        ) {
-          continue;
-        }
+        let requestedAmount =
+          item.requestedAmount;
 
-        const brokerAmount = round(
-          tripLeg.brokerAmount || 0
-        );
+        // ----------------------------------------------
+        // Find existing settlement leg
+        // ----------------------------------------------
 
-        if (brokerAmount <= 0) {
-          continue;
-        }
-
-        // --------------------------------------------
-        // Requested settlement amount
-        // --------------------------------------------
-        let requestedAmount = round(
-          requestLeg.settledAmount || 0
-        );
-
-        if (requestedAmount <= 0) {
-          continue;
-        }
-
-        // --------------------------------------------
-        // Existing settlement leg
-        // --------------------------------------------
         let settlementLeg =
           settlementTrip.legs.find(
             (item) =>
               Number(item.legNo) ===
-              Number(tripLeg.legNo)
+              Number(tripLeg.legNo),
           );
 
-        // --------------------------------------------
+        // ----------------------------------------------
         // Create settlement leg
-        // --------------------------------------------
+        // ----------------------------------------------
+
         if (!settlementLeg) {
           settlementLeg = {
             legNo: Number(
-              tripLeg.legNo
+              tripLeg.legNo,
             ),
 
             from:
@@ -1033,27 +1061,47 @@ exports.settleBrokerAmount = async (req, res) => {
           };
 
           settlementTrip.legs.push(
-            settlementLeg
+            settlementLeg,
           );
+        } else {
+          // --------------------------------------------
+          // Always use actual broker amount
+          // from Trip
+          // --------------------------------------------
+
+          settlementLeg.brokerAmount =
+            brokerAmount;
         }
 
-        // --------------------------------------------
-        // Don't allow over-settlement
-        // --------------------------------------------
+        // ----------------------------------------------
+        // Current settled amount
+        // ----------------------------------------------
+
         const currentSettledAmount =
           round(
-            settlementLeg.settledAmount
+            settlementLeg.settledAmount || 0,
           );
 
         const currentBalance =
           round(
             brokerAmount -
-              currentSettledAmount
+              currentSettledAmount,
           );
 
+        // ----------------------------------------------
+        // Already completely settled
+        // ----------------------------------------------
+
         if (currentBalance <= 0) {
+          settlementLeg.balanceAmount = 0;
+          settlementLeg.status = "Settled";
+
           continue;
         }
+
+        // ----------------------------------------------
+        // Prevent over settlement
+        // ----------------------------------------------
 
         if (
           requestedAmount >
@@ -1063,20 +1111,25 @@ exports.settleBrokerAmount = async (req, res) => {
             currentBalance;
         }
 
-        // --------------------------------------------
+        // ----------------------------------------------
         // Update settlement leg
-        // --------------------------------------------
+        // ----------------------------------------------
+
         settlementLeg.settledAmount =
           round(
             currentSettledAmount +
-              requestedAmount
+              requestedAmount,
           );
 
         settlementLeg.balanceAmount =
           round(
             brokerAmount -
-              settlementLeg.settledAmount
+              settlementLeg.settledAmount,
           );
+
+        // ----------------------------------------------
+        // Update leg status
+        // ----------------------------------------------
 
         if (
           settlementLeg.balanceAmount <= 0
@@ -1096,19 +1149,20 @@ exports.settleBrokerAmount = async (req, res) => {
         }
       }
 
-      // ----------------------------------------------
-      // Recalculate trip totals
-      // ----------------------------------------------
+      // ------------------------------------------------
+      // Recalculate settlement trip totals
+      // ------------------------------------------------
+
       settlementTrip.totalBrokerAmount =
         round(
           settlementTrip.legs.reduce(
             (sum, leg) =>
               sum +
               Number(
-                leg.brokerAmount || 0
+                leg.brokerAmount || 0,
               ),
-            0
-          )
+            0,
+          ),
         );
 
       settlementTrip.totalSettledAmount =
@@ -1117,10 +1171,10 @@ exports.settleBrokerAmount = async (req, res) => {
             (sum, leg) =>
               sum +
               Number(
-                leg.settledAmount || 0
+                leg.settledAmount || 0,
               ),
-            0
-          )
+            0,
+          ),
         );
 
       settlementTrip.totalBalanceAmount =
@@ -1129,15 +1183,16 @@ exports.settleBrokerAmount = async (req, res) => {
             (sum, leg) =>
               sum +
               Number(
-                leg.balanceAmount || 0
+                leg.balanceAmount || 0,
               ),
-            0
-          )
+            0,
+          ),
         );
 
-      // ----------------------------------------------
-      // Trip settlement status
-      // ----------------------------------------------
+      // ------------------------------------------------
+      // Update trip settlement status
+      // ------------------------------------------------
+
       if (
         settlementTrip.totalSettledAmount >=
         settlementTrip.totalBrokerAmount
@@ -1157,38 +1212,66 @@ exports.settleBrokerAmount = async (req, res) => {
       } else {
         settlementTrip.status =
           "Pending";
+
+        settlementTrip.settledAt = null;
       }
 
       settlementTrip.remarks =
         remarks || "";
 
+      // ------------------------------------------------
+      // Add response
+      // ------------------------------------------------
+
       settledResults.push({
         tripId: trip._id,
+
         tripNo: trip.tripNo,
-        status: settlementTrip.status,
+
+        status:
+          settlementTrip.status,
+
         totalBrokerAmount:
           settlementTrip.totalBrokerAmount,
+
         totalSettledAmount:
           settlementTrip.totalSettledAmount,
+
         totalBalanceAmount:
           settlementTrip.totalBalanceAmount,
+
+        legs:
+          settlementTrip.legs,
+      });
+    }
+
+    // --------------------------------------------------
+    // 5. Make sure at least one settlement happened
+    // --------------------------------------------------
+
+    if (settledResults.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No valid broker settlement legs found for the requested trips",
       });
     }
 
     // --------------------------------------------------
     // 6. Recalculate broker outstanding amount
     // --------------------------------------------------
+
     const allSettlementTrips =
-      broker.settlement.trips || [];
+      broker.settlement?.trips || [];
 
     const outstandingAmount =
       allSettlementTrips.reduce(
-        (sum, trip) =>
+        (sum, settlementTrip) =>
           sum +
           Number(
-            trip.totalBalanceAmount || 0
+            settlementTrip.totalBalanceAmount || 0,
           ),
-        0
+        0,
       );
 
     broker.outstandingAmount =
@@ -1199,17 +1282,25 @@ exports.settleBrokerAmount = async (req, res) => {
     // --------------------------------------------------
     // 7. Response
     // --------------------------------------------------
+
     return res.status(200).json({
       success: true,
+
       message:
         "Broker settlement completed",
 
       data: {
         broker: {
           _id: broker._id,
-          brokerId: broker.brokerId,
+
+          brokerId:
+            broker.brokerId,
+
           companyName:
             broker.companyName,
+
+          outstandingAmount:
+            broker.outstandingAmount,
         },
 
         settlements:
@@ -1219,12 +1310,14 @@ exports.settleBrokerAmount = async (req, res) => {
   } catch (error) {
     console.error(
       "settleBrokerAmount error:",
-      error
+      error,
     );
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Failed to settle broker amount",
     });
   }
 };
