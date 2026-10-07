@@ -3068,12 +3068,23 @@ exports.completeWeighbridge = async (req, res) => {
 
     const {
       grossWeight,
-      uom,
       ticketNumber,
+      uom,
       weighbridgeName,
       weighbridgeFee,
       remarks,
     } = req.body;
+
+    // =========================================================
+    // VALIDATE DRIVER CONTEXT
+    // =========================================================
+
+    if (!businessId || !driverId) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver authentication details are missing",
+      });
+    }
 
     // =========================================================
     // FIND TRIP
@@ -3095,9 +3106,9 @@ exports.completeWeighbridge = async (req, res) => {
     // GET CURRENT LEG
     // =========================================================
 
-    const currentLegIndex = trip.currentLeg - 1;
+    const currentLegIndex = Number(trip.currentLeg) - 1;
 
-    const currentLeg = trip.journeyLegs[currentLegIndex];
+    const currentLeg = trip.journeyLegs?.[currentLegIndex];
 
     if (!currentLeg) {
       return res.status(400).json({
@@ -3118,27 +3129,13 @@ exports.completeWeighbridge = async (req, res) => {
     }
 
     // =========================================================
-    // CURRENT LEG STATUS CHECK
+    // LEG STATUS CHECK
     // =========================================================
 
     if (currentLeg.legStatus !== "Documents Pending") {
       return res.status(400).json({
         success: false,
         message: `Leg ${currentLeg.legNo} currently ${currentLeg.legStatus}`,
-      });
-    }
-
-    // =========================================================
-    // PREVENT DUPLICATE WEIGHBRIDGE
-    // =========================================================
-
-    if (
-      currentLeg.weighbridge &&
-      currentLeg.weighbridge.status === "Completed"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: `Weighbridge details already submitted for Leg ${currentLeg.legNo}`,
       });
     }
 
@@ -3159,51 +3156,140 @@ exports.completeWeighbridge = async (req, res) => {
     }
 
     // =========================================================
-    // RECEIPT VALIDATION
+    // PREVENT DUPLICATE WEIGHBRIDGE
     // =========================================================
 
-    // if (!req.file) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Weighbridge receipt is required",
-    //   });
-    // }
+    if (currentLeg.weighbridge?.status === "Completed") {
+      return res.status(400).json({
+        success: false,
+        message: `Weighbridge details already submitted for Leg ${currentLeg.legNo}`,
+      });
+    }
 
     // =========================================================
-    // UPLOAD WEIGHBRIDGE RECEIPT
+    // VALIDATE GROSS WEIGHT
     // =========================================================
 
-    const receiptPath = await uploadFile(
-      req.file,
-      businessId,
-      `trip-documents/${tripId}/leg-${currentLeg.legNo}/weighbridge`,
-    );
+    const parsedGrossWeight = Number(grossWeight);
+
+    if (
+      grossWeight === undefined ||
+      grossWeight === null ||
+      grossWeight === "" ||
+      Number.isNaN(parsedGrossWeight) ||
+      parsedGrossWeight < 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid gross weight is required",
+      });
+    }
 
     // =========================================================
-    // SAVE WEIGHBRIDGE TO CURRENT LEG
+    // VALIDATE WEIGHBRIDGE FEE
+    // =========================================================
+
+    const parsedWeighbridgeFee =
+      weighbridgeFee === undefined ||
+      weighbridgeFee === null ||
+      weighbridgeFee === ""
+        ? 0
+        : Number(weighbridgeFee);
+
+    if (Number.isNaN(parsedWeighbridgeFee) || parsedWeighbridgeFee < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid weighbridge fee",
+      });
+    }
+
+    // =========================================================
+    // UPLOAD RECEIPT
+    // =========================================================
+
+    let receiptPath = null;
+
+    if (req.file) {
+      // File was actually uploaded.
+      // Only then access originalname.
+      if (!req.file.originalname) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid weighbridge receipt file",
+        });
+      }
+
+      receiptPath = await uploadFile(
+        req.file,
+        businessId,
+        `trip-documents/${tripId}/leg-${currentLeg.legNo}/weighbridge`,
+      );
+    }
+    
+    // =========================================================
+    // SAVE WEIGHBRIDGE DETAILS
     // =========================================================
 
     currentLeg.weighbridge = {
       status: "Completed",
 
-      grossWeight,
+      grossWeight: parsedGrossWeight,
 
-      uom,
+      uom: uom || "",
 
-      ticketNumber,
+      ticketNumber: ticketNumber || "",
 
-      weighbridgeName,
+      weighbridgeName: weighbridgeName || "",
 
-      weighbridgeFee,
+      weighbridgeFee: parsedWeighbridgeFee,
 
       receiptPath,
 
-      remarks,
+      remarks: remarks || "",
 
       measuredAt: new Date(),
 
       measuredBy: driverId,
     };
+
+    // =========================================================
+    // ADD WEIGHBRIDGE EXPENSE TO CURRENT LEG
+    // =========================================================
+
+    if (parsedWeighbridgeFee > 0) {
+      if (!Array.isArray(currentLeg.tripExpense)) {
+        currentLeg.tripExpense = [];
+      }
+
+      currentLeg.tripExpense.push({
+        expenseType: "Weighbridge",
+        amount: parsedWeighbridgeFee,
+        date: new Date(),
+        remarks: remarks || "",
+      });
+
+      // =======================================================
+      // ADD WEIGHBRIDGE EXPENSE TO TRIP LEVEL EXPENSE HISTORY
+      // =======================================================
+
+      if (!Array.isArray(trip.totalExpenseEntries)) {
+        trip.totalExpenseEntries = [];
+      }
+
+      trip.totalExpenseEntries.push({
+        expenseType: "Weighbridge",
+        amount: parsedWeighbridgeFee,
+        date: new Date(),
+        remarks: remarks || "",
+      });
+
+      // =======================================================
+      // UPDATE TOTAL EXPENSE
+      // =======================================================
+
+      trip.totalExpense =
+        Number(trip.totalExpense || 0) + parsedWeighbridgeFee;
+    }
 
     // =========================================================
     // UPDATE CURRENT LEG STATUS
@@ -3218,7 +3304,7 @@ exports.completeWeighbridge = async (req, res) => {
     trip.tripStatus = "Ready To Start";
 
     // =========================================================
-    // SAVE
+    // SAVE TRIP
     // =========================================================
 
     await trip.save();
@@ -3230,13 +3316,23 @@ exports.completeWeighbridge = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `Weighbridge completed successfully for Leg ${currentLeg.legNo}`,
+
       data: {
         tripId: trip._id,
+
         tripNo: trip.tripNo,
+
         currentLeg: trip.currentLeg,
+
         tripStatus: trip.tripStatus,
+
         legStatus: currentLeg.legStatus,
+
+        totalExpense: trip.totalExpense,
+
         weighbridge: currentLeg.weighbridge,
+
+        tripExpense: currentLeg.tripExpense,
       },
     });
   } catch (error) {
@@ -3277,7 +3373,7 @@ exports.getWeighbridge = async (req, res) => {
       });
     }
 
-    // Check weighbridge details
+    // Weighbridge must be completed
     if (
       !currentLeg.weighbridge ||
       currentLeg.weighbridge.status !== "Completed"
@@ -3308,11 +3404,20 @@ exports.getWeighbridge = async (req, res) => {
       data: {
         tripId: trip._id,
         tripNo: trip.tripNo,
+
         currentLeg: trip.currentLeg,
         legNo: currentLeg.legNo,
+
         tripStatus: trip.tripStatus,
         legStatus: currentLeg.legStatus,
+
         weighbridge,
+
+        // Include expense information because
+        // completeWeighbridge can add the weighbridge fee
+        tripExpense: currentLeg.tripExpense,
+        totalExpenseEntries: trip.totalExpenseEntries,
+        totalExpense: trip.totalExpense,
       },
     });
   } catch (error) {
@@ -3386,7 +3491,10 @@ exports.updateWeighbridge = async (req, res) => {
       });
     }
 
-    // Keep existing receipt if no new file is uploaded
+    /*
+     * Keep existing receipt if no new file is uploaded.
+     * If a new receipt is uploaded, replace the old receipt.
+     */
     let receiptPath = currentLeg.weighbridge.receiptPath;
 
     if (req.file) {
@@ -3398,7 +3506,7 @@ exports.updateWeighbridge = async (req, res) => {
       );
     }
 
-    // Update only provided values
+    // Update only provided weighbridge fields
     if (grossWeight !== undefined) {
       currentLeg.weighbridge.grossWeight = grossWeight;
     }
@@ -3427,10 +3535,33 @@ exports.updateWeighbridge = async (req, res) => {
       currentLeg.weighbridge.receiptPath = receiptPath;
     }
 
+    /*
+     * IMPORTANT:
+     * Keep the weighbridge completed.
+     * Updating the details must NOT move the leg/trip
+     * back to Documents Pending or Pending weighbridge.
+     */
+    currentLeg.weighbridge.status = "Completed";
+
     currentLeg.weighbridge.measuredAt = new Date();
     currentLeg.weighbridge.measuredBy = driverId;
 
     await trip.save();
+
+    // Generate fresh signed URL for response
+    let receiptUrl = null;
+
+    if (currentLeg.weighbridge.receiptPath) {
+      receiptUrl = await getSignedUrl(
+        currentLeg.weighbridge.receiptPath,
+        businessId,
+      );
+    }
+
+    const weighbridge = {
+      ...currentLeg.weighbridge.toObject(),
+      receiptUrl,
+    };
 
     return res.status(200).json({
       success: true,
@@ -3438,10 +3569,18 @@ exports.updateWeighbridge = async (req, res) => {
       data: {
         tripId: trip._id,
         tripNo: trip.tripNo,
+
         currentLeg: trip.currentLeg,
+        legNo: currentLeg.legNo,
+
         tripStatus: trip.tripStatus,
         legStatus: currentLeg.legStatus,
-        weighbridge: currentLeg.weighbridge,
+
+        weighbridge,
+
+        tripExpense: currentLeg.tripExpense,
+        totalExpenseEntries: trip.totalExpenseEntries,
+        totalExpense: trip.totalExpense,
       },
     });
   } catch (error) {
@@ -4507,7 +4646,7 @@ exports.getTripExpenses = async (req, res) => {
 
 exports.updateTripExpense = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.driver?.businessId;
     const { expenseId } = req.params;
 
     const { amount, expenseType, remarks } = req.body;
