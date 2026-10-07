@@ -640,7 +640,6 @@ exports.getDriverDashboard = async (req, res) => {
 exports.getIndividualDriverDashboard = async (req, res) => {
   try {
     const businessId = req.driver.businessId;
-
     const { driverId } = req.params;
 
     // ===================================================
@@ -652,7 +651,10 @@ exports.getIndividualDriverDashboard = async (req, res) => {
       businessId,
     })
       .populate("vehicle.vehicleId")
-      .populate("currentTripId", "tripNo tripStatus currentLeg journeyType");
+      .populate(
+        "currentTripId",
+        "tripNo tripStatus currentLeg journeyType",
+      );
 
     if (!driver) {
       return res.status(404).json({
@@ -668,7 +670,6 @@ exports.getIndividualDriverDashboard = async (req, res) => {
 
     const trips = await Trip.find({
       businessId,
-
       journeyLegs: {
         $elemMatch: {
           $or: [
@@ -702,26 +703,69 @@ exports.getIndividualDriverDashboard = async (req, res) => {
       "Delivery OTP Pending",
     ];
 
-    const completedTrips = trips.filter(
-      (trip) => trip.tripStatus === "Completed",
-    );
+    // ===================================================
+    // COMPLETED TRIPS
+    //
+    // A trip is considered completed for this driver
+    // when at least one leg assigned to this driver
+    // has legStatus = "Completed".
+    //
+    // Trip itself can have tripStatus = "Closed".
+    // ===================================================
 
-    const runningTrips = trips.filter((trip) =>
-      runningStatuses.includes(trip.tripStatus),
-    );
+    const completedTrips = trips.filter((trip) => {
+      return (trip.journeyLegs || []).some(
+        (leg) =>
+          leg.legStatus === "Completed" &&
+          (
+            leg.driver1?.toString() === driverId.toString() ||
+            leg.driver2?.toString() === driverId.toString()
+          ),
+      );
+    });
+
+    // ===================================================
+    // RUNNING TRIPS
+    //
+    // Only consider trips where this driver has a
+    // currently active/running leg.
+    // ===================================================
+
+    const runningTrips = trips.filter((trip) => {
+      return runningStatuses.includes(trip.tripStatus);
+    });
+
+    // ===================================================
+    // CANCELLED TRIPS
+    // ===================================================
 
     const cancelledTrips = trips.filter(
       (trip) => trip.tripStatus === "Cancelled",
     );
 
     // ===================================================
-    // DISTANCE
+    // DRIVER COMPLETED LEG DISTANCE
     // ===================================================
 
-    const totalDistance = completedTrips.reduce(
-      (sum, trip) => sum + Number(trip.distanceTravelled || 0),
-      0,
-    );
+    const totalDistance = trips.reduce((tripSum, trip) => {
+      const driverLegs = (trip.journeyLegs || []).filter(
+        (leg) =>
+          leg.legStatus === "Completed" &&
+          (
+            leg.driver1?.toString() === driverId.toString() ||
+            leg.driver2?.toString() === driverId.toString()
+          ),
+      );
+
+      return (
+        tripSum +
+        driverLegs.reduce(
+          (legSum, leg) =>
+            legSum + Number(leg.distanceTravelled || 0),
+          0,
+        )
+      );
+    }, 0);
 
     // ===================================================
     // FUEL
@@ -733,7 +777,8 @@ exports.getIndividualDriverDashboard = async (req, res) => {
     });
 
     const totalFuel = fuelEntries.reduce(
-      (sum, fuel) => sum + Number(fuel.quantity || 0),
+      (sum, fuel) =>
+        sum + Number(fuel.quantity || 0),
       0,
     );
 
@@ -741,35 +786,72 @@ exports.getIndividualDriverDashboard = async (req, res) => {
     // CURRENT TRIP
     // ===================================================
 
-    const currentTrip = trips.find((trip) =>
-      runningStatuses.includes(trip.tripStatus),
-    );
+    const currentTrip = trips.find((trip) => {
+      if (!runningStatuses.includes(trip.tripStatus)) {
+        return false;
+      }
+
+      return (trip.journeyLegs || []).some(
+        (leg) =>
+          leg.driver1?.toString() === driverId.toString() ||
+          leg.driver2?.toString() === driverId.toString(),
+      );
+    });
 
     // ===================================================
     // TRIP HISTORY
     // ===================================================
 
     const tripHistory = trips.map((trip) => {
-      const driverLegs = trip.journeyLegs.filter(
+      const driverLegs = (trip.journeyLegs || []).filter(
         (leg) =>
           leg.driver1?.toString() === driverId.toString() ||
           leg.driver2?.toString() === driverId.toString(),
       );
 
+      // -----------------------------------------------
+      // DRIVER ADVANCE
+      // -----------------------------------------------
+
       const totalDriverAdvance = driverLegs.reduce(
         (sum, leg) =>
           sum +
-          (leg.driverAdvance || []).reduce(
-            (advanceSum, advance) => advanceSum + Number(advance.amount || 0),
-            0,
-          ),
+          (Array.isArray(leg.driverAdvance)
+            ? leg.driverAdvance.reduce(
+                (advanceSum, advance) =>
+                  advanceSum +
+                  Number(advance.amount || 0),
+                0,
+              )
+            : 0),
         0,
       );
 
+      // -----------------------------------------------
+      // DRIVER LEG DISTANCE
+      // -----------------------------------------------
+
       const legDistance = driverLegs.reduce(
-        (sum, leg) => sum + Number(leg.distanceTravelled || 0),
+        (sum, leg) =>
+          sum +
+          Number(leg.distanceTravelled || 0),
         0,
       );
+
+      // -----------------------------------------------
+      // COMPLETED LEGS
+      // -----------------------------------------------
+
+      const completedDriverLegs = driverLegs.filter(
+        (leg) => leg.legStatus === "Completed",
+      );
+
+      // -----------------------------------------------
+      // TRIP COMPLETION FOR THIS DRIVER
+      // -----------------------------------------------
+
+      const driverTripCompleted =
+        completedDriverLegs.length > 0;
 
       return {
         tripId: trip._id,
@@ -779,13 +861,22 @@ exports.getIndividualDriverDashboard = async (req, res) => {
 
         currentLeg: trip.currentLeg,
 
+        // Important for multi-leg trips
+        totalDriverLegs: driverLegs.length,
+        completedDriverLegs:
+          completedDriverLegs.length,
+
+        driverTripCompleted,
+
         distanceTravelled: legDistance,
 
         driverAdvance: totalDriverAdvance,
 
-        totalFuelQuantity: Number(trip.totalFuelQuantity || 0),
+        totalFuelQuantity: Number(
+          trip.totalFuelQuantity || 0,
+        ),
 
-        completedAt: trip.completedAt,
+        completedAt: trip.completedAt || null,
       };
     });
 
@@ -810,6 +901,9 @@ exports.getIndividualDriverDashboard = async (req, res) => {
 
           totalTrips: trips.length,
 
+          // IMPORTANT:
+          // Based on driver's completed journey legs,
+          // not trip.tripStatus === "Completed"
           completedTrips: completedTrips.length,
 
           runningTrips: runningTrips.length,
@@ -835,9 +929,16 @@ exports.getIndividualDriverDashboard = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error(
+      "getIndividualDriverDashboard error:",
+      error,
+    );
+
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Failed to fetch driver dashboard",
     });
   }
 };
