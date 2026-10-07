@@ -25,33 +25,60 @@ const fuelEntrySchema = new mongoose.Schema(
       required: true,
     },
 
-    odometer: Number,
+    fuelStation: {
+      type: String,
+      trim: true,
+    },
 
-    fuelStation: String,
-
-    location: String,
+    location: {
+      type: String,
+      trim: true,
+    },
 
     fuelType: {
       type: String,
       enum: ["Diesel", "Petrol", "CNG", "LNG", "EV"],
+      required: true,
     },
 
-    quantity: Number,
+    quantity: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
 
-    rate: Number,
+    rate: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
 
-    amount: Number,
+    amount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
 
     paymentMode: {
       type: String,
       enum: ["Cash", "Card", "FASTag", "Credit", "UPI"],
     },
 
-    billNo: String,
+    billNo: {
+      type: String,
+      trim: true,
+    },
 
-    billPath: String,
+    // Optional
+    billPath: {
+      type: String,
+      trim: true,
+    },
 
-    remarks: String,
+    remarks: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,

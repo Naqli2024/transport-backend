@@ -3225,7 +3225,7 @@ exports.completeWeighbridge = async (req, res) => {
         `trip-documents/${tripId}/leg-${currentLeg.legNo}/weighbridge`,
       );
     }
-    
+
     // =========================================================
     // SAVE WEIGHBRIDGE DETAILS
     // =========================================================
@@ -3598,7 +3598,7 @@ exports.updateWeighbridge = async (req, res) => {
 ============================================*/
 exports.createFuelEntry = async (req, res) => {
   try {
-    const { businessId, driverId } = req.driver;
+    const { businessId, driverId } = req.driver || {};
     const { tripId } = req.params;
 
     const {
@@ -3610,34 +3610,88 @@ exports.createFuelEntry = async (req, res) => {
       paymentMode,
       billNo,
       remarks,
-    } = req.body;
+    } = req.body || {};
+
+    // =========================================================
+    // VALIDATE DRIVER CONTEXT
+    // =========================================================
+
+    if (!businessId || !driverId) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver authentication details are missing",
+      });
+    }
+
+    // =========================================================
+    // VALIDATE FUEL TYPE
+    // =========================================================
+
+    const allowedFuelTypes = [
+      "Diesel",
+      "Petrol",
+      "CNG",
+      "LNG",
+      "EV",
+    ];
+
+    if (!fuelType) {
+      return res.status(400).json({
+        success: false,
+        message: "Fuel type is required",
+      });
+    }
+
+    if (!allowedFuelTypes.includes(fuelType)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid fuel type. Allowed values: ${allowedFuelTypes.join(
+          ", ",
+        )}`,
+      });
+    }
+
+    // =========================================================
+    // VALIDATE QUANTITY
+    // =========================================================
+
+    const parsedQuantity = Number(quantity);
 
     if (
       quantity === undefined ||
       quantity === null ||
-      rate === undefined ||
-      rate === null
+      quantity === "" ||
+      Number.isNaN(parsedQuantity) ||
+      parsedQuantity <= 0
     ) {
       return res.status(400).json({
         success: false,
-        message: "quantity and rate are required",
+        message: "Valid fuel quantity greater than 0 is required",
       });
     }
 
-    if (Number(quantity) <= 0 || Number(rate) < 0) {
+    // =========================================================
+    // VALIDATE RATE
+    // =========================================================
+
+    const parsedRate = Number(rate);
+
+    if (
+      rate === undefined ||
+      rate === null ||
+      rate === "" ||
+      Number.isNaN(parsedRate) ||
+      parsedRate < 0
+    ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Quantity must be greater than 0 and rate must be non-negative",
+        message: "Valid fuel rate is required",
       });
     }
 
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Fuel bill is required",
-      });
-    }
+    // =========================================================
+    // FIND TRIP
+    // =========================================================
 
     const trip = await Trip.findOne({
       _id: tripId,
@@ -3651,18 +3705,25 @@ exports.createFuelEntry = async (req, res) => {
       });
     }
 
-    // Current journey leg
-    const currentLegIndex = trip.currentLeg - 1;
-    const currentLeg = trip.journeyLegs[currentLegIndex];
+    // =========================================================
+    // GET CURRENT JOURNEY LEG
+    // =========================================================
+
+    const currentLegIndex = Number(trip.currentLeg) - 1;
+
+    const currentLeg = trip.journeyLegs?.[currentLegIndex];
 
     if (!currentLeg) {
       return res.status(400).json({
         success: false,
-        message: "Current journey leg not found",
+        message: `Current leg ${trip.currentLeg} not found`,
       });
     }
 
-    // Fuel can only be added for the active leg
+    // =========================================================
+    // STATUS VALIDATION
+    // =========================================================
+
     if (
       trip.tripStatus !== "In Transit" ||
       currentLeg.legStatus !== "In Transit"
@@ -3674,65 +3735,53 @@ exports.createFuelEntry = async (req, res) => {
       });
     }
 
-    // Validate driver against current journey leg
+    // =========================================================
+    // DRIVER VALIDATION
+    // =========================================================
+
     const isAssignedDriver =
       currentLeg.driver1?.toString() === driverId.toString() ||
       currentLeg.driver2?.toString() === driverId.toString();
 
-    // if (!isAssignedDriver) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message:
-    //       "Only a driver assigned to the current journey leg can add fuel",
-    //   });
-    // }
+    if (!isAssignedDriver) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only a driver assigned to the current journey leg can add fuel",
+      });
+    }
 
-    /*
-     * Check previous fuel entry for THIS LEG.
-     *
-     * We use legNo here because each journey leg has its own
-     * operational odometer sequence.
-     */
-    const previousFuel = await FuelEntry.findOne({
-      businessId,
-      tripId,
-      legNo: currentLeg.legNo,
-    });
+    // =========================================================
+    // CALCULATE AMOUNT
+    // =========================================================
 
-    // if (
-    //   previousFuel &&
-    //   Number(odometer) < Number(previousFuel.odometer)
-    // ) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message:
-    //       "Odometer cannot be less than the previous fuel entry for this journey leg",
-    //   });
-    // }
+    const amount = parsedQuantity * parsedRate;
 
-    /*
-     * Do not allow fuel odometer to be less than
-     * the leg start odometer.
-     */
-    // if (
-    //   currentLeg.startOdometer !== undefined &&
-    //   currentLeg.startOdometer !== null &&
-    //   Number(odometer) < Number(currentLeg.startOdometer)
-    // ) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message:
-    //       "Fuel odometer cannot be less than journey leg start odometer",
-    //   });
-    // }
+    // =========================================================
+    // FUEL BILL IS OPTIONAL
+    // =========================================================
 
-    const amount = Number(quantity) * Number(rate);
+    let billPath = null;
 
-    const billPath = await uploadFile(
-      req.file,
-      businessId,
-      `trip-documents/${tripId}/leg-${currentLeg.legNo}/fuel`,
-    );
+    if (req.file) {
+      // Make sure the uploaded file is valid
+      if (!req.file.originalname) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid fuel bill file",
+        });
+      }
+
+      billPath = await uploadFile(
+        req.file,
+        businessId,
+        `trip-documents/${tripId}/leg-${currentLeg.legNo}/fuel`,
+      );
+    }
+
+    // =========================================================
+    // CREATE FUEL ENTRY
+    // =========================================================
 
     const fuel = await FuelEntry.create({
       businessId,
@@ -3744,36 +3793,87 @@ exports.createFuelEntry = async (req, res) => {
       location,
       fuelType,
 
-      quantity: Number(quantity),
-      rate: Number(rate),
+      quantity: parsedQuantity,
+      rate: parsedRate,
       amount,
 
       paymentMode,
       billNo,
-      billPath,
+
+      // Only store billPath when a bill was uploaded
+      ...(billPath && {
+        billPath,
+      }),
+
       remarks,
     });
 
-    // Overall trip fuel totals
-    trip.totalFuelQuantity = (trip.totalFuelQuantity || 0) + Number(quantity);
+    // =========================================================
+    // UPDATE TOTAL FUEL QUANTITY
+    // =========================================================
 
-    trip.totalFuelCost = (trip.totalFuelCost || 0) + amount;
+    trip.totalFuelQuantity =
+      Number(trip.totalFuelQuantity || 0) + parsedQuantity;
 
-    trip.totalFuelEntries = (trip.totalFuelEntries || 0) + 1;
+    // =========================================================
+    // UPDATE TOTAL FUEL COST
+    // =========================================================
+
+    trip.totalFuelCost =
+      Number(trip.totalFuelCost || 0) + amount;
+
+    // =========================================================
+    // TOTAL FUEL ENTRIES
+    // =========================================================
+
+    /*
+     * totalFuelEntries is an embedded array in Trip.
+     * Therefore DO NOT do:
+     *
+     * trip.totalFuelEntries = ... + 1
+     */
+
+    if (!Array.isArray(trip.totalFuelEntries)) {
+      trip.totalFuelEntries = [];
+    }
+
+    trip.totalFuelEntries.push({
+      date: new Date(),
+      quantity: parsedQuantity,
+      amount,
+      remarks: remarks || "",
+    });
+
+    // =========================================================
+    // SAVE TRIP
+    // =========================================================
 
     await trip.save();
+
+    // =========================================================
+    // RESPONSE
+    // =========================================================
 
     return res.status(201).json({
       success: true,
       message: "Fuel entry added successfully",
-      data: fuel,
+
+      data: {
+        fuel,
+
+        totalFuelQuantity: trip.totalFuelQuantity,
+
+        totalFuelCost: trip.totalFuelCost,
+
+        totalFuelEntries: trip.totalFuelEntries,
+      },
     });
   } catch (error) {
     console.error("createFuelEntry error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to create fuel entry",
     });
   }
 };
@@ -3781,8 +3881,14 @@ exports.createFuelEntry = async (req, res) => {
 exports.getTripFuelEntries = async (req, res) => {
   try {
     const businessId = req.user?.businessId || req.driver?.businessId;
-
     const { tripId } = req.params;
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Business authentication details are missing",
+      });
+    }
 
     const trip = await Trip.findOne({
       _id: tripId,
@@ -3812,7 +3918,9 @@ exports.getTripFuelEntries = async (req, res) => {
         });
       }
 
-      const leg = trip.journeyLegs.find((item) => item.legNo === parsedLegNo);
+      const leg = trip.journeyLegs?.find(
+        (item) => Number(item.legNo) === parsedLegNo,
+      );
 
       if (!leg) {
         return res.status(404).json({
@@ -3853,7 +3961,7 @@ exports.getTripFuelEntries = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to get fuel entries",
     });
   }
 };
@@ -3861,8 +3969,14 @@ exports.getTripFuelEntries = async (req, res) => {
 exports.getFuelEntry = async (req, res) => {
   try {
     const businessId = req.user?.businessId || req.driver?.businessId;
-
     const { fuelId } = req.params;
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Business authentication details are missing",
+      });
+    }
 
     const fuel = await FuelEntry.findOne({
       _id: fuelId,
@@ -3893,15 +4007,33 @@ exports.getFuelEntry = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to get fuel entry",
     });
   }
 };
 
 exports.updateFuelEntry = async (req, res) => {
   try {
-    const { businessId, driverId } = req.driver;
+    const { businessId, driverId } = req.driver || {};
     const { fuelId } = req.params;
+
+    const {
+      fuelStation,
+      location,
+      fuelType,
+      quantity,
+      rate,
+      paymentMode,
+      billNo,
+      remarks,
+    } = req.body || {};
+
+    if (!businessId || !driverId) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver authentication details are missing",
+      });
+    }
 
     const fuel = await FuelEntry.findOne({
       _id: fuelId,
@@ -3915,12 +4047,12 @@ exports.updateFuelEntry = async (req, res) => {
       });
     }
 
-    // Only the driver who originally created the entry
-    // can update it.
+    // Only the driver who originally created the entry can update it
     if (fuel.driverId?.toString() !== driverId.toString()) {
       return res.status(403).json({
         success: false,
-        message: "Only the driver who created this fuel entry can update it",
+        message:
+          "Only the driver who created this fuel entry can update it",
       });
     }
 
@@ -3936,8 +4068,9 @@ exports.updateFuelEntry = async (req, res) => {
       });
     }
 
-    // Find the leg to which this fuel entry belongs
-    const leg = trip.journeyLegs.find((item) => item.legNo === fuel.legNo);
+    const leg = trip.journeyLegs?.find(
+      (item) => Number(item.legNo) === Number(fuel.legNo),
+    );
 
     if (!leg) {
       return res.status(404).json({
@@ -3946,97 +4079,72 @@ exports.updateFuelEntry = async (req, res) => {
       });
     }
 
-    const newOdometer =
-      req.body.odometer !== undefined
-        ? Number(req.body.odometer)
-        : Number(fuel.odometer);
+    const allowedFuelTypes = [
+      "Diesel",
+      "Petrol",
+      "CNG",
+      "LNG",
+      "EV",
+    ];
+
+    const newFuelType =
+      fuelType !== undefined ? fuelType : fuel.fuelType;
 
     const newQuantity =
-      req.body.quantity !== undefined
-        ? Number(req.body.quantity)
-        : Number(fuel.quantity);
+      quantity !== undefined ? Number(quantity) : Number(fuel.quantity);
 
     const newRate =
-      req.body.rate !== undefined ? Number(req.body.rate) : Number(fuel.rate);
+      rate !== undefined ? Number(rate) : Number(fuel.rate);
 
-    if (Number.isNaN(newOdometer) || newOdometer < 0) {
+    if (!newFuelType) {
       return res.status(400).json({
         success: false,
-        message: "Invalid odometer",
+        message: "Fuel type is required",
       });
     }
 
-    if (Number.isNaN(newQuantity) || newQuantity <= 0) {
+    if (!allowedFuelTypes.includes(newFuelType)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid fuel type. Allowed values: ${allowedFuelTypes.join(", ")}`,
+      });
+    }
+
+    if (
+      quantity !== undefined &&
+      (quantity === "" ||
+        Number.isNaN(newQuantity) ||
+        newQuantity <= 0)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Fuel quantity must be greater than 0",
       });
     }
 
-    if (Number.isNaN(newRate) || newRate < 0) {
+    if (
+      rate !== undefined &&
+      (rate === "" ||
+        Number.isNaN(newRate) ||
+        newRate < 0)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid fuel rate",
       });
     }
 
-    /*
-     * Find another fuel entry from the same leg.
-     * Exclude the current entry.
-     */
-    const previousFuel = await FuelEntry.findOne({
-      businessId,
-      tripId: trip._id,
-      legNo: fuel.legNo,
-      _id: { $ne: fuel._id },
-      odometer: { $lte: newOdometer },
-    }).sort({
-      odometer: -1,
-    });
-
-    /*
-     * Find the next fuel entry after this one.
-     * This prevents changing the odometer to a value
-     * greater than the next entry.
-     */
-    const nextFuel = await FuelEntry.findOne({
-      businessId,
-      tripId: trip._id,
-      legNo: fuel.legNo,
-      _id: { $ne: fuel._id },
-      odometer: { $gte: newOdometer },
-    }).sort({
-      odometer: 1,
-    });
-
-    if (previousFuel && newOdometer < Number(previousFuel.odometer)) {
-      return res.status(400).json({
-        success: false,
-        message: "Odometer cannot be less than the previous fuel entry",
-      });
-    }
-
-    if (nextFuel && newOdometer > Number(nextFuel.odometer)) {
-      return res.status(400).json({
-        success: false,
-        message: "Odometer cannot be greater than the next fuel entry",
-      });
-    }
-
-    if (
-      leg.startOdometer !== undefined &&
-      leg.startOdometer !== null &&
-      newOdometer < Number(leg.startOdometer)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Fuel odometer cannot be less than journey leg start odometer",
-      });
-    }
-
-    let billPath = fuel.billPath;
+    // Bill is optional
+    let billPath = fuel.billPath || null;
 
     if (req.file) {
+      if (!req.file.originalname) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid fuel bill file",
+        });
+      }
+
       billPath = await replaceFile(
         req.file,
         businessId,
@@ -4045,26 +4153,34 @@ exports.updateFuelEntry = async (req, res) => {
       );
     }
 
-    fuel.odometer = newOdometer;
+    const oldQuantity = Number(fuel.quantity || 0);
+    const oldAmount = Number(fuel.amount || 0);
 
-    fuel.fuelStation = req.body.fuelStation ?? fuel.fuelStation;
+    const newAmount = newQuantity * newRate;
 
-    fuel.location = req.body.location ?? fuel.location;
+    fuel.fuelStation =
+      fuelStation !== undefined ? fuelStation : fuel.fuelStation;
 
-    fuel.fuelType = req.body.fuelType ?? fuel.fuelType;
+    fuel.location =
+      location !== undefined ? location : fuel.location;
 
+    fuel.fuelType = newFuelType;
     fuel.quantity = newQuantity;
     fuel.rate = newRate;
+    fuel.amount = newAmount;
 
-    fuel.amount = newQuantity * newRate;
+    fuel.paymentMode =
+      paymentMode !== undefined
+        ? paymentMode
+        : fuel.paymentMode;
 
-    fuel.paymentMode = req.body.paymentMode ?? fuel.paymentMode;
-
-    fuel.billNo = req.body.billNo ?? fuel.billNo;
+    fuel.billNo =
+      billNo !== undefined ? billNo : fuel.billNo;
 
     fuel.billPath = billPath;
 
-    fuel.remarks = req.body.remarks ?? fuel.remarks;
+    fuel.remarks =
+      remarks !== undefined ? remarks : fuel.remarks;
 
     await fuel.save();
 
@@ -4087,7 +4203,16 @@ exports.updateFuelEntry = async (req, res) => {
       0,
     );
 
-    trip.totalFuelEntries = entries.length;
+    /*
+     * IMPORTANT:
+     * totalFuelEntries is an embedded array.
+     *
+     * Do NOT do:
+     * trip.totalFuelEntries = entries.length;
+     *
+     * The exact update here depends on the embedded
+     * totalFuelEntries schema.
+     */
 
     await trip.save();
 
@@ -4101,7 +4226,7 @@ exports.updateFuelEntry = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to update fuel entry",
     });
   }
 };

@@ -544,10 +544,10 @@ const tripSchema = new mongoose.Schema(
           min: 0,
         },
 
-        odometer: {
-          type: Number,
-          min: 0,
-        },
+        // odometer: {
+        //   type: Number,
+        //   min: 0,
+        // },
 
         remarks: {
           type: String,
