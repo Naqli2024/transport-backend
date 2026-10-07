@@ -2277,27 +2277,27 @@ exports.closeTrip = async (req, res) => {
     // -------------------------------------------------
     // POST TRIP INSPECTION
     // -------------------------------------------------
-    const inspection = await PostTripInspection.findOne({
-      tripId: trip._id,
-      businessId,
-    });
+    // const inspection = await PostTripInspection.findOne({
+    //   tripId: trip._id,
+    //   businessId,
+    // });
 
-    if (!inspection) {
-      return res.status(400).json({
-        success: false,
-        message: "Post Trip Inspection not completed",
-      });
-    }
+    // if (!inspection) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Post Trip Inspection not completed",
+    //   });
+    // }
 
-    // -------------------------------------------------
-    // POST TRIP INSPECTION MUST BE PASSED
-    // -------------------------------------------------
-    if (inspection.inspectionStatus !== "Passed") {
-      return res.status(400).json({
-        success: false,
-        message: "Post Trip Inspection must be passed before closing the trip",
-      });
-    }
+    // // -------------------------------------------------
+    // // POST TRIP INSPECTION MUST BE PASSED
+    // // -------------------------------------------------
+    // if (inspection.inspectionStatus !== "Passed") {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Post Trip Inspection must be passed before closing the trip",
+    //   });
+    // }
 
     // =================================================
     // CLOSE TRIP
