@@ -385,11 +385,22 @@ exports.updateCustomer = async (req, res) => {
 
 exports.getCustomerDashboard = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.user?.businessId;
 
-    // =====================================
+    // ============================================
+    // VALIDATE AUTH
+    // ============================================
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Business authentication details are missing",
+      });
+    }
+
+    // ============================================
     // SUMMARY
-    // =====================================
+    // ============================================
 
     const totalCustomers = await Customer.countDocuments({
       businessId,
@@ -405,94 +416,287 @@ exports.getCustomerDashboard = async (req, res) => {
       status: "Inactive",
     });
 
-    // =====================================
+    // ============================================
     // CUSTOMER LIST
-    // =====================================
+    // ============================================
 
     const customers = await Customer.find({
       businessId,
-    }).sort({
-      companyName: 1,
-    });
+    })
+      .sort({
+        companyName: 1,
+      })
+      .lean();
 
+    // ============================================
+    // GET ALL BUSINESS TRIPS
+    //
+    // Customer is stored inside journeyLegs.
+    // ============================================
+
+    const trips = await Trip.find({
+      businessId,
+    })
+      .sort({
+        createdAt: 1,
+      })
+      .lean();
+
+    // ============================================
+    // GLOBAL TOTALS
+    // ============================================
+
+    let totalTrips = 0;
     let totalRevenue = 0;
     let outstandingAmount = 0;
-    let totalTrips = 0;
 
     const dashboard = [];
 
+    // ============================================
+    // PROCESS EACH CUSTOMER
+    // ============================================
+
     for (const customer of customers) {
-      const trips = await Trip.find({
-        businessId,
-        customerId: customer._id,
-      });
+      const customerTrips = [];
 
-      const customerTrips = trips.length;
+      let customerRevenue = 0;
 
-      const revenue = trips.reduce(
-        (sum, trip) => sum + (trip.freightAmount || 0),
-        0
-      );
+      // ==========================================
+      // FIND CUSTOMER'S TRIPS
+      // ==========================================
 
-      const outstanding = trips.reduce(
-        (sum, trip) =>
-          sum +
-          ((trip.freightAmount || 0) -
-            (trip.advanceAmount || 0)),
-        0
-      );
-
-      const activeTrips = trips.filter((trip) =>
-        ["Pre Trip Pending", "Ready To Start", "In Transit"].includes(
-          trip.tripStatus
+      for (const trip of trips) {
+        const journeyLegs = Array.isArray(
+          trip.journeyLegs,
         )
-      );
+          ? trip.journeyLegs
+          : [];
 
-      totalRevenue += revenue;
-      outstandingAmount += outstanding;
-      totalTrips += customerTrips;
+        // ----------------------------------------
+        // FIND LEGS BELONGING TO THIS CUSTOMER
+        // ----------------------------------------
+
+        const customerLegs = journeyLegs.filter(
+          (leg) =>
+            leg.customerId &&
+            leg.customerId.toString() ===
+              customer._id.toString(),
+        );
+
+        if (!customerLegs.length) {
+          continue;
+        }
+
+        // ----------------------------------------
+        // CALCULATE CUSTOMER REVENUE FOR THIS TRIP
+        // ----------------------------------------
+
+        const tripRevenue =
+          customerLegs.reduce(
+            (sum, leg) =>
+              sum +
+              Number(
+                leg.estimatedFreightAmount || 0,
+              ),
+            0,
+          );
+
+        customerRevenue += tripRevenue;
+
+        // ----------------------------------------
+        // STORE CUSTOMER TRIP
+        // ----------------------------------------
+
+        customerTrips.push({
+          tripId: trip._id,
+
+          tripNo:
+            trip.tripNo || null,
+
+          tripStatus:
+            trip.tripStatus || null,
+
+          journeyType:
+            trip.journeyType || null,
+
+          vehicleId:
+            trip.vehicleId || null,
+
+          revenue:
+            tripRevenue,
+
+          legs: customerLegs.map((leg) => ({
+            legNo: leg.legNo,
+
+            from:
+              leg.from || null,
+
+            to:
+              leg.to || null,
+
+            customerId:
+              leg.customerId || null,
+
+            freightAmount:
+              Number(
+                leg.estimatedFreightAmount || 0,
+              ),
+
+            weight:
+              Number(leg.weight || 0),
+
+            uom:
+              leg.uom || null,
+
+            amountPerTon:
+              Number(
+                leg.amountPerTon || 0,
+              ),
+
+            legStatus:
+              leg.legStatus || null,
+          })),
+        });
+      }
+
+      // ==========================================
+      // CUSTOMER OUTSTANDING
+      //
+      // Customer document is currently the source
+      // of truth for outstanding amount.
+      // ==========================================
+
+      const customerOutstandingAmount =
+        Number(
+          customer.outstandingAmount || 0,
+        );
+
+      // ==========================================
+      // ACTIVE TRIPS
+      // ==========================================
+
+      const activeTrips =
+        customerTrips.filter((trip) =>
+          [
+            "Pre Trip Pending",
+            "Ready To Start",
+            "In Transit",
+            "Post Trip Pending",
+            "Documents Pending",
+          ].includes(
+            trip.tripStatus,
+          ),
+        );
+
+      // ==========================================
+      // GLOBAL TOTALS
+      // ==========================================
+
+      totalTrips += customerTrips.length;
+
+      totalRevenue += customerRevenue;
+
+      outstandingAmount +=
+        customerOutstandingAmount;
+
+      // ==========================================
+      // CUSTOMER DASHBOARD
+      // ==========================================
 
       dashboard.push({
         _id: customer._id,
-        customerId: customer.customerId,
-        companyName: customer.companyName,
-        contactPerson: customer.contactPerson,
-        mobile: customer.mobile,
-        status: customer.status,
 
-        totalTrips: customerTrips,
-        totalRevenue: revenue,
-        outstandingAmount: outstanding,
+        customerId:
+          customer.customerId,
 
-        activeTrips: activeTrips.length,
+        companyName:
+          customer.companyName,
 
-        currentTrips: activeTrips.map((trip) => ({
-          tripId: trip._id,
-          tripNo: trip.tripNo,
-          tripStatus: trip.tripStatus,
-          freightAmount: trip.freightAmount,
-        })),
+        contactPerson:
+          customer.contactPerson,
+
+        mobile:
+          customer.mobile,
+
+        status:
+          customer.status,
+
+        totalTrips:
+          customerTrips.length,
+
+        totalRevenue:
+          customerRevenue,
+
+        outstandingAmount:
+          customerOutstandingAmount,
+
+        activeTrips:
+          activeTrips.length,
+
+        currentTrips:
+          activeTrips.map((trip) => ({
+            tripId:
+              trip.tripId,
+
+            tripNo:
+              trip.tripNo,
+
+            tripStatus:
+              trip.tripStatus,
+
+            journeyType:
+              trip.journeyType,
+
+            vehicleId:
+              trip.vehicleId,
+
+            revenue:
+              trip.revenue,
+
+            legs:
+              trip.legs,
+          })),
       });
     }
 
-    res.status(200).json({
+    // ============================================
+    // RESPONSE
+    // ============================================
+
+    return res.status(200).json({
       success: true,
+
       data: {
         summary: {
           totalCustomers,
+
           activeCustomers,
+
           inactiveCustomers,
+
           totalTrips,
+
           totalRevenue,
+
           outstandingAmount,
         },
-        customers: dashboard,
+
+        customers:
+          dashboard,
       },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error(
+      "getCustomerDashboard error:",
+      error,
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+
+      message:
+        error.message ||
+        "Failed to fetch customer dashboard",
     });
   }
 };

@@ -369,11 +369,22 @@ exports.deleteBroker = async (req, res) => {
 
 exports.getBrokerDashboard = async (req, res) => {
   try {
-    const businessId = req.user.businessId;
+    const businessId = req.user?.businessId;
 
-    // =====================================
-    // SUMMARY
-    // =====================================
+    // ============================================
+    // VALIDATE AUTH
+    // ============================================
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Business authentication details are missing",
+      });
+    }
+
+    // ============================================
+    // BROKER SUMMARY
+    // ============================================
 
     const totalBrokers = await Broker.countDocuments({
       businessId,
@@ -389,15 +400,35 @@ exports.getBrokerDashboard = async (req, res) => {
       status: "Inactive",
     });
 
-    // =====================================
-    // BROKER LIST
-    // =====================================
+    // ============================================
+    // GET ALL BROKERS
+    // ============================================
 
     const brokers = await Broker.find({
       businessId,
-    }).sort({
-      companyName: 1,
-    });
+    })
+      .sort({
+        companyName: 1,
+      })
+      .lean();
+
+    // ============================================
+    // GET ALL TRIPS
+    //
+    // Broker is stored inside journeyLegs.
+    // ============================================
+
+    const trips = await Trip.find({
+      businessId,
+    })
+      .sort({
+        createdAt: 1,
+      })
+      .lean();
+
+    // ============================================
+    // GLOBAL TOTALS
+    // ============================================
 
     let totalTrips = 0;
     let totalCommission = 0;
@@ -405,80 +436,320 @@ exports.getBrokerDashboard = async (req, res) => {
 
     const dashboard = [];
 
+    // ============================================
+    // PROCESS EACH BROKER
+    // ============================================
+
     for (const broker of brokers) {
-      const trips = await Trip.find({
-        businessId,
-        brokerId: broker._id,
-      });
+      // ------------------------------------------
+      // FIND ALL TRIPS HAVING THIS BROKER
+      // ------------------------------------------
 
-      const tripCount = trips.length;
+      const brokerTrips = [];
 
-      const commission = trips.reduce(
-        (sum, trip) => sum + (trip.commissionAmount || 0),
-        0,
-      );
+      let brokerTotalCommission = 0;
+      let brokerOutstandingCommission = 0;
 
-      // Pending commission = trips not completed
-      const outstanding = trips
-        .filter((trip) => trip.tripStatus !== "Completed")
-        .reduce((sum, trip) => sum + (trip.commissionAmount || 0), 0);
+      // ------------------------------------------
+      // PROCESS EVERY TRIP
+      // ------------------------------------------
 
-      const activeTrips = trips.filter((trip) =>
-        [
-          "Pre Trip Pending",
-          "Ready To Start",
-          "In Transit",
-          "Post Trip Pending",
-        ].includes(trip.tripStatus),
-      );
+      for (const trip of trips) {
+        const journeyLegs = Array.isArray(
+          trip.journeyLegs,
+        )
+          ? trip.journeyLegs
+          : [];
 
-      totalTrips += tripCount;
-      totalCommission += commission;
-      outstandingCommission += outstanding;
+        // ----------------------------------------
+        // FIND LEGS BELONGING TO THIS BROKER
+        // ----------------------------------------
+
+        const brokerLegs = journeyLegs.filter(
+          (leg) =>
+            leg.brokerId &&
+            leg.brokerId.toString() ===
+              broker._id.toString(),
+        );
+
+        if (!brokerLegs.length) {
+          continue;
+        }
+
+        // ----------------------------------------
+        // CALCULATE TRIP BROKER AMOUNT
+        // ----------------------------------------
+
+        const tripBrokerAmount =
+          brokerLegs.reduce(
+            (sum, leg) =>
+              sum +
+              Number(
+                leg.brokerAmount || 0,
+              ),
+            0,
+          );
+
+        // ----------------------------------------
+        // FIND SETTLEMENT FOR THIS TRIP
+        // ----------------------------------------
+
+        const settlementTrip =
+          broker.settlement?.trips?.find(
+            (settlement) =>
+              settlement.tripId &&
+              settlement.tripId.toString() ===
+                trip._id.toString(),
+          );
+
+        // ----------------------------------------
+        // SETTLED AMOUNT
+        // ----------------------------------------
+
+        const tripSettledAmount =
+          Number(
+            settlementTrip?.totalSettledAmount ||
+              0,
+          );
+
+        // ----------------------------------------
+        // BALANCE
+        // ----------------------------------------
+
+        const tripBalanceAmount = Math.max(
+          tripBrokerAmount -
+            tripSettledAmount,
+          0,
+        );
+
+        // ----------------------------------------
+        // ADD BROKER TOTALS
+        // ----------------------------------------
+
+        brokerTotalCommission +=
+          tripBrokerAmount;
+
+        brokerOutstandingCommission +=
+          tripBalanceAmount;
+
+        // ----------------------------------------
+        // STORE TRIP
+        // ----------------------------------------
+
+        brokerTrips.push({
+          tripId: trip._id,
+
+          tripNo:
+            trip.tripNo || null,
+
+          tripStatus:
+            trip.tripStatus || null,
+
+          journeyType:
+            trip.journeyType || null,
+
+          vehicleId:
+            trip.vehicleId || null,
+
+          brokerAmount:
+            tripBrokerAmount,
+
+          settledAmount:
+            tripSettledAmount,
+
+          balanceAmount:
+            tripBalanceAmount,
+
+          legs: brokerLegs.map((leg) => ({
+            legNo: leg.legNo,
+
+            from:
+              leg.from || null,
+
+            to:
+              leg.to || null,
+
+            brokerId:
+              leg.brokerId || null,
+
+            brokerAmount:
+              Number(
+                leg.brokerAmount || 0,
+              ),
+
+            legStatus:
+              leg.legStatus || null,
+          })),
+        });
+      }
+
+      // ==========================================
+      // BROKER TRIP COUNT
+      // ==========================================
+
+      const brokerTripCount =
+        brokerTrips.length;
+
+      // ==========================================
+      // ACTIVE TRIPS
+      //
+      // Closed / Completed trips are not active.
+      // ==========================================
+
+      const activeTrips =
+        brokerTrips.filter((trip) =>
+          [
+            "Pre Trip Pending",
+            "Ready To Start",
+            "In Transit",
+            "Post Trip Pending",
+            "Documents Pending",
+          ].includes(
+            trip.tripStatus,
+          ),
+        );
+
+      // ==========================================
+      // GLOBAL TOTALS
+      // ==========================================
+
+      totalTrips += brokerTripCount;
+
+      totalCommission +=
+        brokerTotalCommission;
+
+      outstandingCommission +=
+        brokerOutstandingCommission;
+
+      // ==========================================
+      // BROKER STATUS
+      // ==========================================
+
+      let settlementStatus = "Pending";
+
+      if (
+        brokerTotalCommission > 0 &&
+        brokerOutstandingCommission <= 0
+      ) {
+        settlementStatus = "Settled";
+      } else if (
+        brokerOutstandingCommission <
+          brokerTotalCommission &&
+        brokerOutstandingCommission > 0
+      ) {
+        settlementStatus = "Partial";
+      }
+
+      // ==========================================
+      // DASHBOARD BROKER
+      // ==========================================
 
       dashboard.push({
         _id: broker._id,
-        brokerId: broker.brokerId,
-        companyName: broker.companyName,
-        contactPerson: broker.contactPerson,
-        mobile: broker.mobile,
-        status: broker.status,
 
-        totalTrips: tripCount,
-        totalCommission: commission,
-        outstandingCommission: outstanding,
+        brokerId:
+          broker.brokerId,
 
-        activeTrips: activeTrips.length,
+        companyName:
+          broker.companyName,
 
-        currentTrips: activeTrips.map((trip) => ({
-          tripId: trip._id,
-          tripNo: trip.tripNo,
-          tripStatus: trip.tripStatus,
-          customerId: trip.customerId,
-          freightAmount: trip.freightAmount,
-          commissionAmount: trip.commissionAmount,
-        })),
+        contactPerson:
+          broker.contactPerson,
+
+        mobile:
+          broker.mobile,
+
+        status:
+          broker.status,
+
+        totalTrips:
+          brokerTripCount,
+
+        totalCommission:
+          brokerTotalCommission,
+
+        settledCommission:
+          brokerTotalCommission -
+          brokerOutstandingCommission,
+
+        outstandingCommission:
+          brokerOutstandingCommission,
+
+        settlementStatus,
+
+        activeTrips:
+          activeTrips.length,
+
+        currentTrips:
+          activeTrips.map((trip) => ({
+            tripId:
+              trip.tripId,
+
+            tripNo:
+              trip.tripNo,
+
+            tripStatus:
+              trip.tripStatus,
+
+            journeyType:
+              trip.journeyType,
+
+            vehicleId:
+              trip.vehicleId,
+
+            brokerAmount:
+              trip.brokerAmount,
+
+            settledAmount:
+              trip.settledAmount,
+
+            balanceAmount:
+              trip.balanceAmount,
+
+            legs:
+              trip.legs,
+          })),
       });
     }
 
-    res.status(200).json({
+    // ============================================
+    // RESPONSE
+    // ============================================
+
+    return res.status(200).json({
       success: true,
+
       data: {
         summary: {
           totalBrokers,
+
           activeBrokers,
+
           inactiveBrokers,
+
           totalTrips,
+
           totalCommission,
+
           outstandingCommission,
         },
-        brokers: dashboard,
+
+        brokers:
+          dashboard,
       },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error(
+      "getBrokerDashboard error:",
+      error,
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+
+      message:
+        error.message ||
+        "Failed to fetch broker dashboard",
     });
   }
 };

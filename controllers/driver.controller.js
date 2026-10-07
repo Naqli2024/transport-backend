@@ -1026,6 +1026,18 @@ exports.getCurrentTrip = async (req, res) => {
 exports.getDriverSettlement = async (req, res) => {
   try {
     const { driverId } = req.params;
+    const businessId = req.user?.businessId;
+
+    // ============================================
+    // VALIDATE AUTH
+    // ============================================
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Business authentication details are missing",
+      });
+    }
 
     // ============================================
     // VALIDATE DRIVER ID
@@ -1037,8 +1049,6 @@ exports.getDriverSettlement = async (req, res) => {
         message: "Invalid driver ID",
       });
     }
-
-    const businessId = req.user.businessId;
 
     // ============================================
     // FIND DRIVER
@@ -1057,13 +1067,18 @@ exports.getDriverSettlement = async (req, res) => {
     }
 
     // ============================================
-    // FIND COMPLETED TRIPS
-    // DRIVER MUST BE IN A COMPLETED LEG
+    // FIND CLOSED TRIPS
+    //
+    // A driver settlement is generated only after
+    // the trip is closed.
+    //
+    // Leg must be completed and driver must belong
+    // to that leg.
     // ============================================
 
     const trips = await Trip.find({
       businessId,
-      tripStatus: "Completed",
+      tripStatus: "Closed",
 
       journeyLegs: {
         $elemMatch: {
@@ -1079,15 +1094,18 @@ exports.getDriverSettlement = async (req, res) => {
       .lean();
 
     // ============================================
-    // EXISTING SETTLEMENT
+    // EXISTING DRIVER SETTLEMENT
     // ============================================
 
+    const driverSettlement =
+      driver.settlement || {};
+
     const existingSettledAmount = Number(
-      driver.settlement?.settledAmount || 0,
+      driverSettlement.settledAmount || 0,
     );
 
     // ============================================
-    // TOTAL CALCULATIONS
+    // TOTALS
     // ============================================
 
     let totalDriverSalary = 0;
@@ -1099,17 +1117,22 @@ exports.getDriverSettlement = async (req, res) => {
     const settlementTrips = [];
 
     // ============================================
-    // PROCESS TRIPS
+    // PROCESS EACH CLOSED TRIP
     // ============================================
 
     for (const trip of trips) {
-      // --------------------------------------------
+      // ==========================================
       // FIND DRIVER'S COMPLETED LEGS
-      // --------------------------------------------
+      // ==========================================
 
-      const driverLegs = (trip.journeyLegs || []).filter((leg) => {
-        const driver1 = leg.driver1?.toString();
-        const driver2 = leg.driver2?.toString();
+      const driverLegs = (
+        trip.journeyLegs || []
+      ).filter((leg) => {
+        const driver1 =
+          leg.driver1?.toString();
+
+        const driver2 =
+          leg.driver2?.toString();
 
         return (
           leg.legStatus === "Completed" &&
@@ -1124,9 +1147,9 @@ exports.getDriverSettlement = async (req, res) => {
         continue;
       }
 
-      // --------------------------------------------
+      // ==========================================
       // TRIP TOTALS
-      // --------------------------------------------
+      // ==========================================
 
       let tripDriverSalary = 0;
       let tripAdvance = 0;
@@ -1136,11 +1159,32 @@ exports.getDriverSettlement = async (req, res) => {
 
       const legs = [];
 
-      // ============================================
-      // PROCESS EACH DRIVER LEG
-      // ============================================
+      // ==========================================
+      // TRIP EXPENSE ENTRIES
+      //
+      // These belong to the trip.
+      // If legNo is available, filter by leg.
+      // If legNo is not available, they are treated
+      // as trip-level expenses.
+      // ==========================================
 
-      for (const leg of driverLegs) {
+      const expenseEntries = Array.isArray(
+        trip.totalExpenseEntries,
+      )
+        ? trip.totalExpenseEntries
+        : [];
+
+      // ==========================================
+      // PROCESS EACH DRIVER LEG
+      // ==========================================
+
+      for (
+        let legIndex = 0;
+        legIndex < driverLegs.length;
+        legIndex++
+      ) {
+        const leg = driverLegs[legIndex];
+
         // ------------------------------------------
         // DRIVER SALARY
         // ------------------------------------------
@@ -1151,20 +1195,19 @@ exports.getDriverSettlement = async (req, res) => {
 
         // ------------------------------------------
         // DRIVER ADVANCE
-        // ARRAY OF OBJECTS
         // ------------------------------------------
 
-        const driverAdvanceEntries = Array.isArray(
-          leg.driverAdvance,
-        )
-          ? leg.driverAdvance
-          : [];
+        const driverAdvanceEntries =
+          Array.isArray(leg.driverAdvance)
+            ? leg.driverAdvance
+            : [];
 
-        const driverAdvance = driverAdvanceEntries.reduce(
-          (sum, advance) =>
-            sum + Number(advance.amount || 0),
-          0,
-        );
+        const driverAdvance =
+          driverAdvanceEntries.reduce(
+            (sum, advance) =>
+              sum + Number(advance.amount || 0),
+            0,
+          );
 
         // ------------------------------------------
         // DIRECT LEG EXPENSES
@@ -1178,6 +1221,10 @@ exports.getDriverSettlement = async (req, res) => {
           leg.weighbridge?.weighbridgeFee || 0,
         );
 
+        // ------------------------------------------
+        // EXPENSE CATEGORIES
+        // ------------------------------------------
+
         let fuel = 0;
         let loading = 0;
         let unloading = 0;
@@ -1186,31 +1233,52 @@ exports.getDriverSettlement = async (req, res) => {
         let miscellaneous = 0;
 
         // ------------------------------------------
-        // TRIP EXPENSE ENTRIES
+        // FIND EXPENSES FOR THIS LEG
         // ------------------------------------------
 
-        const expenseEntries = Array.isArray(
-          trip.totalExpenseEntries,
-        )
-          ? trip.totalExpenseEntries
-          : [];
+        const legExpenseEntries =
+          expenseEntries.filter((expense) => {
+            // If expense has legNo, it must match
+            // this leg.
+            if (
+              expense.legNo !== undefined &&
+              expense.legNo !== null
+            ) {
+              return (
+                Number(expense.legNo) ===
+                Number(leg.legNo)
+              );
+            }
 
-        for (const expense of expenseEntries) {
-          // If legNo exists, make sure it belongs
-          // to this leg.
-          if (
-            expense.legNo !== undefined &&
-            Number(expense.legNo) !== Number(leg.legNo)
-          ) {
-            continue;
-          }
+            // Existing old records don't have legNo.
+            //
+            // For a single-leg trip, include them.
+            //
+            // For a multi-leg trip, unassigned expenses
+            // cannot safely be duplicated across legs.
+            if (driverLegs.length === 1) {
+              return true;
+            }
 
+            // For multi-leg trips, only assign
+            // unscoped expenses to the first matching
+            // driver leg.
+            return legIndex === 0;
+          });
+
+        // ------------------------------------------
+        // PROCESS EXPENSES
+        // ------------------------------------------
+
+        for (const expense of legExpenseEntries) {
           const amount = Number(
             expense.amount || 0,
           );
 
           switch (
-            String(expense.expenseType || "").toLowerCase()
+            String(
+              expense.expenseType || "",
+            ).toLowerCase()
           ) {
             case "fuel":
               fuel += amount;
@@ -1263,14 +1331,17 @@ exports.getDriverSettlement = async (req, res) => {
         let driverReturn = 0;
 
         if (actualExpense > driverAdvance) {
-          officePay = actualExpense - driverAdvance;
+          officePay =
+            actualExpense -
+            driverAdvance;
         } else {
           driverReturn =
-            driverAdvance - actualExpense;
+            driverAdvance -
+            actualExpense;
         }
 
         // ------------------------------------------
-        // ADD TOTALS
+        // ADD TRIP TOTALS
         // ------------------------------------------
 
         tripDriverSalary += driverSalary;
@@ -1286,11 +1357,14 @@ exports.getDriverSettlement = async (req, res) => {
         legs.push({
           legNo: leg.legNo,
 
-          from: leg.from,
-          to: leg.to,
+          from: leg.from || null,
+          to: leg.to || null,
 
-          driver1: leg.driver1 || null,
-          driver2: leg.driver2 || null,
+          driver1:
+            leg.driver1 || null,
+
+          driver2:
+            leg.driver2 || null,
 
           driverSalary,
 
@@ -1303,12 +1377,19 @@ exports.getDriverSettlement = async (req, res) => {
           driverAdvance,
 
           PC,
+
           weighbridge,
+
           fuel,
+
           loading,
+
           unloading,
+
           parking,
+
           repair,
+
           miscellaneous,
 
           actualExpense,
@@ -1321,63 +1402,82 @@ exports.getDriverSettlement = async (req, res) => {
         });
       }
 
-      // ============================================
-      // ADD TO TOTALS
-      // ============================================
+      // ==========================================
+      // DRIVER PAYABLE FOR THIS TRIP
+      // ==========================================
+
+      const tripDriverPayable = Math.max(
+        tripDriverSalary -
+          tripAdvance -
+          tripExpense,
+        0,
+      );
+
+      // ==========================================
+      // ADD GLOBAL TOTALS
+      // ==========================================
 
       totalDriverSalary += tripDriverSalary;
-      totalAdvance += tripAdvance;
-      totalExpense += tripExpense;
-      totalOfficeShouldPay += tripOfficeShouldPay;
-      totalDriverShouldReturn += tripDriverShouldReturn;
 
-      // ============================================
+      totalAdvance += tripAdvance;
+
+      totalExpense += tripExpense;
+
+      totalOfficeShouldPay +=
+        tripOfficeShouldPay;
+
+      totalDriverShouldReturn +=
+        tripDriverShouldReturn;
+
+      // ==========================================
       // TRIP RESPONSE
-      // ============================================
+      // ==========================================
 
       settlementTrips.push({
         tripId: trip._id,
 
-        tripNo: trip.tripNo || null,
+        tripNo:
+          trip.tripNo || null,
 
-        vehicleId: trip.vehicleId || null,
+        vehicleId:
+          trip.vehicleId || null,
 
-        vehicleNo: trip.vehicleNo || null,
+        vehicleNo:
+          trip.vehicleNo || null,
 
-        journeyType: trip.journeyType || null,
+        journeyType:
+          trip.journeyType || null,
+
+        tripStatus:
+          trip.tripStatus || null,
 
         legs,
 
-        totalDriverSalary: tripDriverSalary,
+        totalDriverSalary:
+          tripDriverSalary,
 
-        totalAdvance: tripAdvance,
+        totalAdvance:
+          tripAdvance,
 
-        totalExpense: tripExpense,
+        totalExpense:
+          tripExpense,
 
-        officeShouldPay: tripOfficeShouldPay,
+        officeShouldPay:
+          tripOfficeShouldPay,
 
-        driverShouldReturn: tripDriverShouldReturn,
+        driverShouldReturn:
+          tripDriverShouldReturn,
 
-        // ========================================
-        // DRIVER PAYABLE FOR THIS TRIP
-        // ========================================
-
-        driverPayable: Math.max(
-          tripDriverSalary -
-            tripAdvance -
-            tripExpense,
-          0,
-        ),
+        driverPayable:
+          tripDriverPayable,
       });
     }
 
     // ============================================
-    // DRIVER PAYABLE
-    //
-    // Salary - Advance - Expense
+    // TOTAL DRIVER PAYABLE
     // ============================================
 
-    const totalPayable = Math.max(
+    const calculatedTotalPayable = Math.max(
       totalDriverSalary -
         totalAdvance -
         totalExpense,
@@ -1385,23 +1485,51 @@ exports.getDriverSettlement = async (req, res) => {
     );
 
     // ============================================
-    // SETTLEMENT
+    // IMPORTANT
+    //
+    // If settlement was already created, use the
+    // stored settlement total as the authoritative
+    // settlement amount.
+    //
+    // Otherwise use the calculated amount.
     // ============================================
 
-    const settledAmount = existingSettledAmount;
+    const totalPayable =
+      driverSettlement.totalPayable !==
+      undefined &&
+      driverSettlement.totalPayable !== null
+        ? Number(
+            driverSettlement.totalPayable,
+          )
+        : calculatedTotalPayable;
+
+    // ============================================
+    // SETTLED AMOUNT
+    // ============================================
+
+    const settledAmount =
+      existingSettledAmount;
+
+    // ============================================
+    // BALANCE
+    // ============================================
 
     const balanceAmount = Math.max(
-      totalPayable - settledAmount,
+      totalPayable -
+        settledAmount,
       0,
     );
 
     // ============================================
-    // DRIVER SETTLEMENT STATUS
+    // STATUS
     // ============================================
 
     let status = "Pending";
 
-    if (totalPayable > 0 && settledAmount >= totalPayable) {
+    if (
+      totalPayable > 0 &&
+      settledAmount >= totalPayable
+    ) {
       status = "Settled";
     } else if (
       settledAmount > 0 &&
@@ -1417,19 +1545,24 @@ exports.getDriverSettlement = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message: "Driver settlement fetched successfully",
+      message:
+        "Driver settlement fetched successfully",
 
       data: {
         driver: {
           _id: driver._id,
 
-          driverId: driver.driverId,
+          driverId:
+            driver.driverId,
 
-          userName: driver.userName,
+          userName:
+            driver.userName,
 
-          name: driver.name,
+          name:
+            driver.name,
 
-          mobile: driver.mobile,
+          mobile:
+            driver.mobile,
         },
 
         settlement: {
@@ -1442,14 +1575,17 @@ exports.getDriverSettlement = async (req, res) => {
           status,
 
           lastSettledAt:
-            driver.settlement?.lastSettledAt || null,
+            driverSettlement.lastSettledAt ||
+            null,
 
           remarks:
-            driver.settlement?.remarks || "",
+            driverSettlement.remarks ||
+            "",
         },
 
         summary: {
-          totalTrips: settlementTrips.length,
+          totalTrips:
+            settlementTrips.length,
 
           totalDriverSalary,
 
@@ -1461,14 +1597,12 @@ exports.getDriverSettlement = async (req, res) => {
 
           totalDriverShouldReturn,
 
-          // ======================================
-          // ACTUAL DRIVER PAYABLE
-          // ======================================
-
-          totalDriverPayable: totalPayable,
+          totalDriverPayable:
+            totalPayable,
         },
 
-        trips: settlementTrips,
+        trips:
+          settlementTrips,
       },
     });
   } catch (error) {
@@ -1480,9 +1614,11 @@ exports.getDriverSettlement = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to fetch driver settlement",
+      message:
+        "Failed to fetch driver settlement",
 
-      error: error.message,
+      error:
+        error.message,
     });
   }
 };
