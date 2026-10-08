@@ -4844,7 +4844,26 @@ exports.updateTripExpense = async (req, res) => {
     const businessId = req.driver?.businessId;
     const { expenseId } = req.params;
 
-    const { amount, expenseType, remarks } = req.body;
+    const {
+      amount,
+      expenseType,
+      remarks,
+    } = req.body || {};
+
+    // =================================================
+    // VALIDATE BUSINESS
+    // =================================================
+
+    if (!businessId) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver authentication details are missing",
+      });
+    }
+
+    // =================================================
+    // FIND EXPENSE
+    // =================================================
 
     const expense = await TripExpense.findOne({
       _id: expenseId,
@@ -4858,6 +4877,10 @@ exports.updateTripExpense = async (req, res) => {
       });
     }
 
+    // =================================================
+    // FIND TRIP
+    // =================================================
+
     const trip = await Trip.findOne({
       _id: expense.tripId,
       businessId,
@@ -4870,8 +4893,14 @@ exports.updateTripExpense = async (req, res) => {
       });
     }
 
-    // Verify the leg still exists
-    const leg = trip.journeyLegs.find((item) => item.legNo === expense.legNo);
+    // =================================================
+    // VERIFY JOURNEY LEG
+    // =================================================
+
+    const leg = (trip.journeyLegs || []).find(
+      (item) =>
+        Number(item.legNo) === Number(expense.legNo),
+    );
 
     if (!leg) {
       return res.status(404).json({
@@ -4880,27 +4909,33 @@ exports.updateTripExpense = async (req, res) => {
       });
     }
 
-    /*
-     * Admin can change the expense amount.
-     */
+    // =================================================
+    // UPDATE AMOUNT
+    // =================================================
+
     if (amount !== undefined) {
+      const parsedAmount = Number(amount);
+
       if (
         amount === null ||
-        Number(amount) <= 0 ||
-        Number.isNaN(Number(amount))
+        amount === "" ||
+        Number.isNaN(parsedAmount) ||
+        parsedAmount <= 0
       ) {
         return res.status(400).json({
           success: false,
-          message: "Expense amount must be greater than 0",
+          message:
+            "Expense amount must be greater than 0",
         });
       }
 
-      expense.amount = Number(amount);
+      expense.amount = parsedAmount;
     }
 
-    /*
-     * Allow admin to correct expense type if required.
-     */
+    // =================================================
+    // UPDATE EXPENSE TYPE
+    // =================================================
+
     if (expenseType !== undefined) {
       const allowedExpenseTypes = [
         "Loading",
@@ -4908,30 +4943,36 @@ exports.updateTripExpense = async (req, res) => {
         "Parking",
         "Repair",
         "Miscellaneous",
+        "PC",
       ];
 
       if (!allowedExpenseTypes.includes(expenseType)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid expense type",
+          message:
+            "Invalid expense type. Allowed values: Loading, Unloading, Parking, Repair, Miscellaneous, PC",
         });
       }
 
-      /*
-       * If changing to Loading/Unloading,
-       * make sure another one doesn't already
-       * exist for the same leg.
-       */
-      if (["Loading", "Unloading"].includes(expenseType)) {
-        const existingExpense = await TripExpense.findOne({
-          businessId,
-          tripId: expense.tripId,
-          legNo: expense.legNo,
+      // -----------------------------------------------
+      // LOADING / UNLOADING / PC UNIQUE PER LEG
+      // -----------------------------------------------
+
+      if (
+        ["Loading", "Unloading", "PC"].includes(
           expenseType,
-          _id: {
-            $ne: expense._id,
-          },
-        });
+        )
+      ) {
+        const existingExpense =
+          await TripExpense.findOne({
+            businessId,
+            tripId: expense.tripId,
+            legNo: expense.legNo,
+            expenseType,
+            _id: {
+              $ne: expense._id,
+            },
+          });
 
         if (existingExpense) {
           return res.status(400).json({
@@ -4944,13 +4985,18 @@ exports.updateTripExpense = async (req, res) => {
       expense.expenseType = expenseType;
     }
 
+    // =================================================
+    // UPDATE REMARKS
+    // =================================================
+
     if (remarks !== undefined) {
       expense.remarks = remarks;
     }
 
-    /*
-     * Admin can replace the bill.
-     */
+    // =================================================
+    // REPLACE BILL
+    // =================================================
+
     if (req.file) {
       const oldBill = expense.filePath;
 
@@ -4960,43 +5006,108 @@ exports.updateTripExpense = async (req, res) => {
         `trip-expenses/${expense.tripId}/leg-${expense.legNo}/${expense.expenseType.toLowerCase()}`,
       );
 
+      if (!newBill) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload expense bill",
+        });
+      }
+
       expense.filePath = newBill;
 
+      // Save new file reference first.
+      await expense.save();
+
+      // Delete old file only after successful save.
       if (oldBill) {
-        await deleteFile(oldBill, businessId);
+        try {
+          await deleteFile(
+            oldBill,
+            businessId,
+          );
+        } catch (deleteError) {
+          console.error(
+            "Failed to delete old expense bill:",
+            deleteError,
+          );
+        }
       }
+    } else {
+      // Save normal expense changes.
+      await expense.save();
     }
 
-    await expense.save();
+    // =================================================
+    // GET ALL EXPENSES FOR THIS TRIP
+    // =================================================
 
-    /*
-     * Recalculate Trip totals after admin edit.
-     */
     const allExpenses = await TripExpense.find({
       businessId,
       tripId: trip._id,
+    }).sort({
+      createdAt: 1,
     });
 
+    // =================================================
+    // RECALCULATE TOTAL EXPENSE
+    // =================================================
+
     trip.totalExpense = allExpenses.reduce(
-      (sum, item) => sum + Number(item.amount || 0),
+      (sum, item) =>
+        sum + Number(item.amount || 0),
       0,
     );
 
-    trip.totalExpenseEntries = allExpenses.length;
+    // =================================================
+    // REBUILD totalExpenseEntries
+    //
+    // IMPORTANT:
+    // This is an ARRAY, NOT A NUMBER.
+    // =================================================
+
+    trip.totalExpenseEntries = allExpenses.map(
+      (item) => ({
+        expenseId: item._id,
+        legNo: item.legNo,
+        expenseType: item.expenseType,
+        amount: Number(item.amount || 0),
+        date: item.createdAt || new Date(),
+        remarks: item.remarks || "",
+      }),
+    );
+
+    // =================================================
+    // SAVE TRIP
+    // =================================================
 
     await trip.save();
 
+    // =================================================
+    // RESPONSE
+    // =================================================
+
     return res.status(200).json({
       success: true,
-      message: "Trip expense updated successfully by admin",
+      message:
+        "Trip expense updated successfully by admin",
       data: expense,
+      tripSummary: {
+        totalExpense: trip.totalExpense,
+        totalExpenseEntries:
+          trip.totalExpenseEntries,
+      },
     });
   } catch (error) {
-    console.error("updateTripExpense error:", error);
+    console.error(
+      "updateTripExpense error:",
+      error,
+    );
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message ||
+        "Failed to update trip expense",
     });
   }
 };
