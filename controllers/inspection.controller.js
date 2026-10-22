@@ -24,11 +24,25 @@ exports.createPreTripInspection = async (req, res) => {
   try {
     const businessId = req.driver.businessId;
 
-    const {
-      tripId,
-      vehicleId,
-      inspectedBy,
-    } = req.body;
+    const { tripId, vehicleId, inspectedBy } = req.body;
+
+    // =========================================================
+    // VALIDATE REQUIRED FIELDS
+    // =========================================================
+
+    if (!tripId) {
+      return res.status(400).json({
+        success: false,
+        message: "tripId is required",
+      });
+    }
+
+    if (!vehicleId) {
+      return res.status(400).json({
+        success: false,
+        message: "vehicleId is required for inspection",
+      });
+    }
 
     // =========================================================
     // FIND TRIP
@@ -51,7 +65,6 @@ exports.createPreTripInspection = async (req, res) => {
     // =========================================================
 
     const currentLegIndex = trip.currentLeg - 1;
-
     const currentLeg = trip.journeyLegs[currentLegIndex];
 
     if (!currentLeg) {
@@ -60,6 +73,8 @@ exports.createPreTripInspection = async (req, res) => {
         message: `Current leg ${trip.currentLeg} not found`,
       });
     }
+
+    const legNo = currentLeg.legNo;
 
     // =========================================================
     // TRIP STATUS CHECK
@@ -79,8 +94,7 @@ exports.createPreTripInspection = async (req, res) => {
     if (currentLeg.legStatus !== "Pre Trip Pending") {
       return res.status(400).json({
         success: false,
-        message:
-          `Leg ${currentLeg.legNo} currently ${currentLeg.legStatus}`,
+        message: `Leg ${legNo} currently ${currentLeg.legStatus}`,
       });
     }
 
@@ -88,14 +102,6 @@ exports.createPreTripInspection = async (req, res) => {
     // VEHICLE VALIDATION
     // =========================================================
 
-    if (!vehicleId) {
-      return res.status(400).json({
-        success: false,
-        message: "vehicleId is required for inspection",
-      });
-    }
-
-    // Own Fleet
     if (
       trip.fleetSource === "Own Fleet" &&
       trip.vehicleId?.toString() !== vehicleId.toString()
@@ -106,50 +112,30 @@ exports.createPreTripInspection = async (req, res) => {
       });
     }
 
-    // Vendor
     if (
       trip.fleetSource === "Vendor" &&
       trip.vendorVehicleId?.toString() !== vehicleId.toString()
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Inspection vehicle does not match vendor vehicle",
+        message: "Inspection vehicle does not match vendor vehicle",
       });
     }
 
     // =========================================================
-    // DRIVER VALIDATION
-    // =========================================================
-
-    // Since driver1 is now inside journeyLegs,
-    // use currentLeg.driver1 if you want to restrict
-    // inspection to the assigned driver.
-
-    // if (
-    //   inspectedBy &&
-    //   currentLeg.driver1 &&
-    //   currentLeg.driver1.toString() !== inspectedBy.toString()
-    // ) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Only assigned driver can perform inspection",
-    //   });
-    // }
-
-    // =========================================================
-    // DUPLICATE INSPECTION
+    // DUPLICATE INSPECTION CHECK FOR CURRENT LEG ONLY
     // =========================================================
 
     const existingInspection = await PreTripInspection.findOne({
       tripId,
       businessId,
+      legNo,
     });
 
     if (existingInspection) {
       return res.status(400).json({
         success: false,
-        message: "Pre-trip inspection already completed",
+        message: `Pre-trip inspection already exists for Leg ${legNo}`,
       });
     }
 
@@ -161,9 +147,7 @@ exports.createPreTripInspection = async (req, res) => {
       req.body.engineOil,
       req.body.coolant,
       req.body.brakes,
-
       validateTyres(req.body.tyres),
-
       req.body.lights,
       req.body.horn,
       req.body.fuel,
@@ -172,9 +156,7 @@ exports.createPreTripInspection = async (req, res) => {
       req.body.firstAidKit,
     ];
 
-    const passed = checks.every(
-      (item) => item === true
-    );
+    const passed = checks.every((item) => item === true);
 
     // =========================================================
     // CREATE INSPECTION
@@ -182,10 +164,25 @@ exports.createPreTripInspection = async (req, res) => {
 
     const inspection = await PreTripInspection.create({
       businessId,
-      ...req.body,
-      inspectionStatus: passed
-        ? "Passed"
-        : "Failed",
+      tripId,
+      legNo,
+      vehicleId,
+      inspectedBy,
+
+      engineOil: req.body.engineOil,
+      coolant: req.body.coolant,
+      brakes: req.body.brakes,
+      lights: req.body.lights,
+      horn: req.body.horn,
+      fuel: req.body.fuel,
+      documents: req.body.documents,
+      fireExtinguisher: req.body.fireExtinguisher,
+      firstAidKit: req.body.firstAidKit,
+
+      remarks: req.body.remarks,
+      tyres: req.body.tyres,
+
+      inspectionStatus: passed ? "Passed" : "Failed",
     });
 
     // =========================================================
@@ -194,11 +191,9 @@ exports.createPreTripInspection = async (req, res) => {
 
     if (passed) {
       currentLeg.legStatus = "Ready For Loading";
-
       trip.tripStatus = "Ready For Loading";
     } else {
       currentLeg.legStatus = "Pre Trip Pending";
-
       trip.tripStatus = "Pre Trip Pending";
     }
 
@@ -211,8 +206,8 @@ exports.createPreTripInspection = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: passed
-        ? `Pre-trip inspection passed for Leg ${currentLeg.legNo}. Trip is ready for loading.`
-        : `Pre-trip inspection failed for Leg ${currentLeg.legNo}. Trip remains pending.`,
+        ? `Pre-trip inspection passed for Leg ${legNo}. Trip is ready for loading.`
+        : `Pre-trip inspection failed for Leg ${legNo}. Trip remains pending.`,
       data: {
         inspection,
         trip: {
@@ -220,15 +215,21 @@ exports.createPreTripInspection = async (req, res) => {
           tripNo: trip.tripNo,
           tripStatus: trip.tripStatus,
           currentLeg: trip.currentLeg,
+          currentLegNo: currentLeg.legNo,
           currentLegStatus: currentLeg.legStatus,
         },
       },
     });
   } catch (error) {
-    console.error(
-      "createPreTripInspection error:",
-      error
-    );
+    console.error("createPreTripInspection error:", error);
+
+    // Handle duplicate index errors, including concurrent requests
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Pre-trip inspection already exists for this leg",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -294,6 +295,10 @@ exports.updatePreTripInspection = async (req, res) => {
     const businessId = req.driver.businessId;
     const { inspectionId } = req.params;
 
+    // =========================================================
+    // FIND INSPECTION
+    // =========================================================
+
     const inspection = await PreTripInspection.findOne({
       _id: inspectionId,
       businessId,
@@ -305,6 +310,10 @@ exports.updatePreTripInspection = async (req, res) => {
         message: "Inspection not found",
       });
     }
+
+    // =========================================================
+    // FIND TRIP
+    // =========================================================
 
     const trip = await Trip.findOne({
       _id: inspection.tripId,
@@ -318,8 +327,93 @@ exports.updatePreTripInspection = async (req, res) => {
       });
     }
 
-    // Update only the fields sent
-    Object.assign(inspection, req.body);
+    // =========================================================
+    // FIND THE LEG ASSOCIATED WITH THIS INSPECTION
+    // =========================================================
+
+    const legIndex = trip.journeyLegs.findIndex(
+      (leg) => leg.legNo === inspection.legNo
+    );
+
+    if (legIndex === -1) {
+      return res.status(400).json({
+        success: false,
+        message: `Leg ${inspection.legNo} not found in this trip`,
+      });
+    }
+
+    const leg = trip.journeyLegs[legIndex];
+
+    const isCurrentLeg =
+      trip.currentLeg === inspection.legNo;
+
+    // =========================================================
+    // PREVENT UPDATING CLOSED TRIPS
+    // =========================================================
+
+    if (trip.tripStatus === "Closed") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot update inspection for a closed trip",
+      });
+    }
+
+    // =========================================================
+    // VALIDATE LEG STATUS
+    // =========================================================
+
+    if (
+      leg.legStatus !== "Pre Trip Pending" &&
+      leg.legStatus !== "Ready For Loading"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Cannot update pre-trip inspection for Leg ${leg.legNo} ` +
+          `because its status is ${leg.legStatus}`,
+      });
+    }
+
+    // Only the current leg's inspection may change the trip status.
+    // Do not allow edits to an earlier leg's inspection after
+    // the trip has progressed to another leg.
+    if (!isCurrentLeg) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Leg ${inspection.legNo} is not the current leg. ` +
+          "Only the current leg's inspection can be updated.",
+      });
+    }
+
+    // =========================================================
+    // ALLOWLIST INSPECTION FIELDS
+    // =========================================================
+
+    const allowedFields = [
+      "inspectedBy",
+      "engineOil",
+      "coolant",
+      "brakes",
+      "lights",
+      "horn",
+      "fuel",
+      "documents",
+      "fireExtinguisher",
+      "firstAidKit",
+      "remarks",
+      "tyres",
+    ];
+
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        inspection[field] = req.body[field];
+      }
+    }
+
+    // =========================================================
+    // REVALIDATE INSPECTION
+    // =========================================================
 
     const checks = [
       inspection.engineOil,
@@ -340,20 +434,44 @@ exports.updatePreTripInspection = async (req, res) => {
 
     await inspection.save();
 
-    trip.tripStatus = passed
-      ? "Ready For Loading"
-      : "Pre Trip Pending";
+    // =========================================================
+    // UPDATE CURRENT LEG + TRIP STATUS
+    // =========================================================
+
+    if (passed) {
+      leg.legStatus = "Ready For Loading";
+      trip.tripStatus = "Ready For Loading";
+    } else {
+      leg.legStatus = "Pre Trip Pending";
+      trip.tripStatus = "Pre Trip Pending";
+    }
 
     await trip.save();
 
-    res.status(200).json({
-      success: true,
-      message: "Pre-trip inspection updated successfully",
-      data: inspection,
-    });
+    // =========================================================
+    // RESPONSE
+    // =========================================================
 
+    return res.status(200).json({
+      success: true,
+      message: passed
+        ? `Pre-trip inspection updated successfully for Leg ${leg.legNo}. Trip is ready for loading.`
+        : `Pre-trip inspection failed for Leg ${leg.legNo}. Trip remains pending.`,
+      data: {
+        inspection,
+        trip: {
+          _id: trip._id,
+          tripNo: trip.tripNo,
+          currentLeg: trip.currentLeg,
+          tripStatus: trip.tripStatus,
+          currentLegStatus: leg.legStatus,
+        },
+      },
+    });
   } catch (error) {
-    res.status(500).json({
+    console.error("updatePreTripInspection error:", error);
+
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -366,12 +484,23 @@ exports.updatePreTripInspection = async (req, res) => {
 exports.postTripInspection = async (req, res) => {
   try {
     const businessId = req.driver.businessId;
-
     const { tripId, inspectedBy } = req.body;
 
-    // -------------------------------------------------
+    // =================================================
+    // VALIDATE REQUIRED FIELDS
+    // =================================================
+
+    if (!tripId || !inspectedBy) {
+      return res.status(400).json({
+        success: false,
+        message: "tripId and inspectedBy are required",
+      });
+    }
+
+    // =================================================
     // FIND TRIP
-    // -------------------------------------------------
+    // =================================================
+
     const trip = await Trip.findOne({
       _id: tripId,
       businessId,
@@ -384,9 +513,10 @@ exports.postTripInspection = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
+    // =================================================
     // TRIP MUST BE COMPLETED
-    // -------------------------------------------------
+    // =================================================
+
     if (trip.tripStatus !== "Completed") {
       return res.status(400).json({
         success: false,
@@ -394,9 +524,10 @@ exports.postTripInspection = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
+    // =================================================
     // ALL JOURNEY LEGS MUST BE COMPLETED
-    // -------------------------------------------------
+    // =================================================
+
     const pendingLeg = trip.journeyLegs.find(
       (leg) => leg.legStatus !== "Completed"
     );
@@ -404,113 +535,39 @@ exports.postTripInspection = async (req, res) => {
     if (pendingLeg) {
       return res.status(400).json({
         success: false,
-        message:
-          `Journey Leg ${pendingLeg.legNo} is not completed`,
+        message: `Journey Leg ${pendingLeg.legNo} is not completed`,
       });
     }
 
-    // -------------------------------------------------
-    // CHECK DUPLICATE INSPECTION
-    // -------------------------------------------------
-    const existing = await PostTripInspection.findOne({
-      businessId,
-      tripId,
-    });
-
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: "Post trip inspection already completed",
-      });
-    }
-
-    // -------------------------------------------------
-    // GET FINAL JOURNEY LEG
-    // -------------------------------------------------
-    const finalLeg =
-      trip.journeyLegs[trip.journeyLegs.length - 1];
-
-    if (!finalLeg) {
+    if (!trip.journeyLegs.length) {
       return res.status(400).json({
         success: false,
         message: "No journey leg found",
       });
     }
 
-    // -------------------------------------------------
-    // VALIDATE INSPECTING DRIVER
-    // -------------------------------------------------
-    const assignedFinalLegDrivers = [];
+    // =================================================
+    // CHECK DUPLICATE POST-TRIP INSPECTION
+    // =================================================
 
-    if (finalLeg.driver1) {
-      assignedFinalLegDrivers.push(
-        finalLeg.driver1.toString()
-      );
-    }
-
-    if (finalLeg.driver2) {
-      assignedFinalLegDrivers.push(
-        finalLeg.driver2.toString()
-      );
-    }
-
-    // if (
-    //   !inspectedBy ||
-    //   !assignedFinalLegDrivers.includes(inspectedBy.toString())
-    // ) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message:
-    //       "Only a driver assigned to the final journey leg can perform post trip inspection",
-    //   });
-    // }
-
-    // -------------------------------------------------
-    // INSPECTION CHECKS
-    // -------------------------------------------------
-    const checks = [
-      req.body.engineOil,
-      req.body.coolant,
-      req.body.brakes,
-      validateTyres(req.body.tyres),
-      req.body.battery,
-      req.body.lights,
-      req.body.horn,
-      req.body.windshield,
-      req.body.documents,
-      !req.body.bodyDamage,
-    ];
-
-    const passed = checks.every(
-      (item) => item === true
-    );
-
-    // -------------------------------------------------
-    // CREATE INSPECTION
-    // -------------------------------------------------
-    const inspection = await PostTripInspection.create({
+    const existing = await PostTripInspection.findOne({
       businessId,
       tripId: trip._id,
-      vehicleId: trip.vehicleId,
-      vendorVehicleId: trip.vendorVehicleId,
-      inspectedBy,
-      engineOil: req.body.engineOil,
-      coolant: req.body.coolant,
-      brakes: req.body.brakes,
-      tyres: req.body.tyres,
-      battery: req.body.battery,
-      lights: req.body.lights,
-      horn: req.body.horn,
-      windshield: req.body.windshield,
-      documents: req.body.documents,
-      bodyDamage: req.body.bodyDamage,
-      inspectionStatus: passed ? "Passed" : "Failed",
-      remarks: req.body.remarks,
     });
 
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "Post-trip inspection already exists for this trip",
+      });
+    }
+
     // =================================================
-    // UPDATE VEHICLE STATUS
+    // VALIDATE FLEET VEHICLE BEFORE CREATING INSPECTION
     // =================================================
+
+    let vehicle = null;
+    let vendorVehicle = null;
 
     if (trip.fleetSource === "Own Fleet") {
       if (!trip.vehicleId) {
@@ -520,62 +577,146 @@ exports.postTripInspection = async (req, res) => {
         });
       }
 
-      await Vehicle.findOneAndUpdate(
-        {
-          _id: trip.vehicleId,
-          businessId,
-        },
-        {
-          $set: {
-            status: passed ? "Available" : "Maintenance",
-          },
-          $unset: {
-            currentTripId: 1,
-          },
-        }
-      );
-    }
+      vehicle = await Vehicle.findOne({
+        _id: trip.vehicleId,
+        businessId,
+      });
 
-    // =================================================
-    // UPDATE VENDOR VEHICLE STATUS
-    // =================================================
-
-    if (trip.fleetSource === "Vendor") {
+      if (!vehicle) {
+        return res.status(404).json({
+          success: false,
+          message: "Trip vehicle not found",
+        });
+      }
+    } else if (trip.fleetSource === "Vendor") {
       if (!trip.vendorVehicleId) {
         return res.status(400).json({
           success: false,
-          message:
-            "Vendor trip has no vendor vehicle assigned",
+          message: "Vendor trip has no vendor vehicle assigned",
         });
       }
 
-      await VendorVehicle.findOneAndUpdate(
-        {
-          _id: trip.vendorVehicleId,
-        },
-        {
-          $set: {
-            status: passed ? "Available" : "Maintenance",
-          },
-          $unset: {
-            currentTripId: 1,
-          },
-        }
-      );
+      vendorVehicle = await VendorVehicle.findOne({
+        _id: trip.vendorVehicleId,
+      });
+
+      if (!vendorVehicle) {
+        return res.status(404).json({
+          success: false,
+          message: "Vendor vehicle not found",
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid fleet source",
+      });
     }
 
-    // -------------------------------------------------
+    // =================================================
+    // VALIDATE INSPECTION RESULT
+    // =================================================
+
+    const checks = [
+      req.body.engineOil === true,
+      req.body.coolant === true,
+      req.body.brakes === true,
+      validateTyres(req.body.tyres) === true,
+      req.body.battery === true,
+      req.body.lights === true,
+      req.body.horn === true,
+      req.body.windshield === true,
+      req.body.documents === true,
+      req.body.bodyDamage === false,
+    ];
+
+    const passed = checks.every(Boolean);
+
+    // =================================================
+    // CREATE POST-TRIP INSPECTION
+    // =================================================
+
+    const inspection = await PostTripInspection.create({
+      businessId,
+      tripId: trip._id,
+
+      vehicleId: trip.fleetSource === "Own Fleet"
+        ? trip.vehicleId
+        : undefined,
+
+      vendorVehicleId: trip.fleetSource === "Vendor"
+        ? trip.vendorVehicleId
+        : undefined,
+
+      inspectedBy,
+
+      odometer: req.body.odometer,
+      fuelRemaining: req.body.fuelRemaining,
+
+      engineOil: req.body.engineOil,
+      coolant: req.body.coolant,
+      brakes: req.body.brakes,
+      battery: req.body.battery,
+      lights: req.body.lights,
+      horn: req.body.horn,
+      windshield: req.body.windshield,
+      documents: req.body.documents,
+      bodyDamage: req.body.bodyDamage,
+
+      remarks: req.body.remarks,
+      photos: req.body.photos,
+      tyres: req.body.tyres,
+
+      inspectionStatus: passed ? "Passed" : "Failed",
+    });
+
+    // =================================================
+    // UPDATE VEHICLE STATUS
+    // =================================================
+
+    const vehicleStatus = passed ? "Available" : "Maintenance";
+
+    if (vehicle) {
+      vehicle.status = vehicleStatus;
+      vehicle.currentTripId = undefined;
+      await vehicle.save();
+    }
+
+    if (vendorVehicle) {
+      vendorVehicle.status = passed ? "Available" : "On Trip";
+      vendorVehicle.currentTripId = undefined;
+      await vendorVehicle.save();
+    }
+
+    // =================================================
     // RESPONSE
-    // -------------------------------------------------
+    // =================================================
+
     return res.status(201).json({
       success: true,
       message: passed
-        ? "Post trip inspection completed successfully"
-        : "Post trip inspection completed with failed checks",
-      data: inspection,
+        ? "Post-trip inspection passed successfully"
+        : "Post-trip inspection failed. Vehicle requires attention.",
+      data: {
+        inspection,
+        trip: {
+          _id: trip._id,
+          tripNo: trip.tripNo,
+          tripStatus: trip.tripStatus,
+        },
+        vehicleStatus,
+        inspectionStatus: inspection.inspectionStatus,
+      },
     });
   } catch (error) {
     console.error("postTripInspection error:", error);
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Post-trip inspection already exists for this trip",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -663,9 +804,10 @@ exports.updatePostTripInspection = async (req, res) => {
     const businessId = req.driver.businessId;
     const { inspectionId } = req.params;
 
-    // -------------------------------------------------
+    // =================================================
     // FIND INSPECTION
-    // -------------------------------------------------
+    // =================================================
+
     const inspection = await PostTripInspection.findOne({
       _id: inspectionId,
       businessId,
@@ -674,13 +816,14 @@ exports.updatePostTripInspection = async (req, res) => {
     if (!inspection) {
       return res.status(404).json({
         success: false,
-        message: "Post trip inspection not found",
+        message: "Post-trip inspection not found",
       });
     }
 
-    // -------------------------------------------------
+    // =================================================
     // FIND TRIP
-    // -------------------------------------------------
+    // =================================================
+
     const trip = await Trip.findOne({
       _id: inspection.tripId,
       businessId,
@@ -693,19 +836,21 @@ exports.updatePostTripInspection = async (req, res) => {
       });
     }
 
-    // -------------------------------------------------
+    // =================================================
     // TRIP MUST BE COMPLETED
-    // -------------------------------------------------
+    // =================================================
+
     if (trip.tripStatus !== "Completed") {
       return res.status(400).json({
         success: false,
-        message: "Trip is not completed yet",
+        message: "Post-trip inspection can only be updated for a completed trip",
       });
     }
 
-    // -------------------------------------------------
-    // ALL LEGS MUST BE COMPLETED
-    // -------------------------------------------------
+    // =================================================
+    // ALL JOURNEY LEGS MUST BE COMPLETED
+    // =================================================
+
     const pendingLeg = trip.journeyLegs.find(
       (leg) => leg.legStatus !== "Completed"
     );
@@ -713,64 +858,71 @@ exports.updatePostTripInspection = async (req, res) => {
     if (pendingLeg) {
       return res.status(400).json({
         success: false,
-        message:
-          `Journey Leg ${pendingLeg.legNo} is not completed`,
+        message: `Journey Leg ${pendingLeg.legNo} is not completed`,
       });
     }
 
-    // -------------------------------------------------
-    // GET FINAL LEG
-    // -------------------------------------------------
-    const finalLeg =
-      trip.journeyLegs[trip.journeyLegs.length - 1];
+    // =================================================
+    // VALIDATE ASSOCIATED VEHICLE
+    // =================================================
 
-    if (!finalLeg) {
+    let vehicle = null;
+    let vendorVehicle = null;
+
+    if (trip.fleetSource === "Own Fleet") {
+      if (!trip.vehicleId) {
+        return res.status(400).json({
+          success: false,
+          message: "Own Fleet trip has no vehicle assigned",
+        });
+      }
+
+      vehicle = await Vehicle.findOne({
+        _id: trip.vehicleId,
+        businessId,
+      });
+
+      if (!vehicle) {
+        return res.status(404).json({
+          success: false,
+          message: "Trip vehicle not found",
+        });
+      }
+    } else if (trip.fleetSource === "Vendor") {
+      if (!trip.vendorVehicleId) {
+        return res.status(400).json({
+          success: false,
+          message: "Vendor trip has no vendor vehicle assigned",
+        });
+      }
+
+      vendorVehicle = await VendorVehicle.findOne({
+        _id: trip.vendorVehicleId,
+      });
+
+      if (!vendorVehicle) {
+        return res.status(404).json({
+          success: false,
+          message: "Vendor vehicle not found",
+        });
+      }
+    } else {
       return res.status(400).json({
         success: false,
-        message: "No journey leg found",
+        message: "Invalid fleet source",
       });
     }
 
-    // -------------------------------------------------
-    // VALIDATE INSPECTING DRIVER IF CHANGED
-    // -------------------------------------------------
-    // if (req.body.inspectedBy) {
-    //   const assignedFinalLegDrivers = [];
-
-    //   if (finalLeg.driver1) {
-    //     assignedFinalLegDrivers.push(
-    //       finalLeg.driver1.toString()
-    //     );
-    //   }
-
-    //   if (finalLeg.driver2) {
-    //     assignedFinalLegDrivers.push(
-    //       finalLeg.driver2.toString()
-    //     );
-    //   }
-
-    //   if (
-    //     !assignedFinalLegDrivers.includes(
-    //       req.body.inspectedBy.toString()
-    //     )
-    //   ) {
-    //     return res.status(400).json({
-    //       success: false,
-    //       message:
-    //         "Only a driver assigned to the final journey leg can perform post trip inspection",
-    //     });
-    //   }
-    // }
-
-    // -------------------------------------------------
-    // UPDATE ALLOWED INSPECTION FIELDS
-    // -------------------------------------------------
+    // =================================================
+    // UPDATE ALLOWED FIELDS ONLY
+    // =================================================
 
     const allowedFields = [
+      "odometer",
+      "fuelRemaining",
       "engineOil",
       "coolant",
       "brakes",
-      "tyres",
       "battery",
       "lights",
       "horn",
@@ -778,43 +930,39 @@ exports.updatePostTripInspection = async (req, res) => {
       "documents",
       "bodyDamage",
       "remarks",
+      "photos",
+      "tyres",
     ];
 
     for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
         inspection[field] = req.body[field];
       }
     }
 
-    // Allow inspectedBy only after validation
-    if (req.body.inspectedBy !== undefined) {
-      inspection.inspectedBy = req.body.inspectedBy;
-    }
+    // Do not allow changing tripId, businessId, vehicleId,
+    // vendorVehicleId or inspectionStatus from the request.
 
-    // -------------------------------------------------
+    // =================================================
     // RE-CHECK INSPECTION
-    // -------------------------------------------------
+    // =================================================
 
     const checks = [
-      inspection.engineOil,
-      inspection.coolant,
-      inspection.brakes,
-      validateTyres(inspection.tyres),
-      inspection.battery,
-      inspection.lights,
-      inspection.horn,
-      inspection.windshield,
-      inspection.documents,
-      !inspection.bodyDamage,
+      inspection.engineOil === true,
+      inspection.coolant === true,
+      inspection.brakes === true,
+      validateTyres(inspection.tyres) === true,
+      inspection.battery === true,
+      inspection.lights === true,
+      inspection.horn === true,
+      inspection.windshield === true,
+      inspection.documents === true,
+      inspection.bodyDamage === false,
     ];
 
-    const passed = checks.every(
-      (item) => item === true
-    );
+    const passed = checks.every(Boolean);
 
-    inspection.inspectionStatus = passed
-      ? "Passed"
-      : "Failed";
+    inspection.inspectionStatus = passed ? "Passed" : "Failed";
 
     await inspection.save();
 
@@ -822,59 +970,39 @@ exports.updatePostTripInspection = async (req, res) => {
     // UPDATE VEHICLE STATUS
     // =================================================
 
-    if (trip.fleetSource === "Own Fleet") {
-      await Vehicle.findOneAndUpdate(
-        {
-          _id: trip.vehicleId,
-          businessId,
-        },
-        {
-          $set: {
-            status: passed ? "Available" : "Maintenance",
-          },
-          $unset: {
-            currentTripId: 1,
-          },
-        }
-      );
+    if (vehicle) {
+      vehicle.status = passed ? "Available" : "Maintenance";
+      vehicle.currentTripId = undefined;
+      await vehicle.save();
+    }
+
+    if (vendorVehicle) {
+      // Use only statuses supported by your VendorVehicle schema.
+      vendorVehicle.status = passed ? "Available" : "On Trip";
+      vendorVehicle.currentTripId = undefined;
+      await vendorVehicle.save();
     }
 
     // =================================================
-    // UPDATE VENDOR VEHICLE STATUS
-    // =================================================
-
-    if (trip.fleetSource === "Vendor") {
-      await VendorVehicle.findOneAndUpdate(
-        {
-          _id: trip.vendorVehicleId,
-        },
-        {
-          $set: {
-            status: passed ? "Available" : "Maintenance",
-          },
-          $unset: {
-            currentTripId: 1,
-          },
-        }
-      );
-    }
-
-    // -------------------------------------------------
     // RESPONSE
-    // -------------------------------------------------
+    // =================================================
 
     return res.status(200).json({
       success: true,
       message: passed
         ? "Post-trip inspection updated successfully"
-        : "Post-trip inspection updated with failed checks",
-      data: inspection,
+        : "Post-trip inspection failed. Vehicle requires attention.",
+      data: {
+        inspection,
+        vehicleStatus: passed
+          ? "Available"
+          : trip.fleetSource === "Own Fleet"
+            ? "Maintenance"
+            : "On Trip",
+      },
     });
   } catch (error) {
-    console.error(
-      "updatePostTripInspection error:",
-      error
-    );
+    console.error("updatePostTripInspection error:", error);
 
     return res.status(500).json({
       success: false,

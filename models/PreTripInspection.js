@@ -14,6 +14,13 @@ const preTripInspectionSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Identifies which journey leg this inspection belongs to
+    legNo: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+
     vehicleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Vehicle",
@@ -42,14 +49,12 @@ const preTripInspectionSchema = new mongoose.Schema(
         position: {
           type: String,
           enum: [
-            "FL", // Front Left
-            "FR", // Front Right
-
+            "FL",
+            "FR",
             "RL1",
             "RL2",
             "RR1",
             "RR2",
-
             "TL1",
             "TL2",
             "TR1",
@@ -58,11 +63,8 @@ const preTripInspectionSchema = new mongoose.Schema(
         },
 
         treadDepthMM: Number,
-
         airPressureOK: Boolean,
-
         sideWallDamage: Boolean,
-
         puncture: Boolean,
 
         condition: {
@@ -80,7 +82,16 @@ const preTripInspectionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("PreTripInspection", preTripInspectionSchema);
+// Only one pre-trip inspection per journey leg
+preTripInspectionSchema.index(
+  { businessId: 1, tripId: 1, legNo: 1 },
+  { unique: true }
+);
+
+module.exports = mongoose.model(
+  "PreTripInspection",
+  preTripInspectionSchema
+);
