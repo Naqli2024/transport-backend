@@ -632,7 +632,7 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 1. Closed trips are permanently non-editable
+    // 1. Closed trips cannot be updated
     // ---------------------------------------------------------
     if (trip.tripStatus === "Closed") {
       return res.status(400).json({
@@ -642,7 +642,7 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 2. Validate journeyLegs payload when supplied
+    // 2. Validate request when adding journey legs
     // ---------------------------------------------------------
     if (req.body.journeyLegs !== undefined) {
       if (
@@ -658,12 +658,11 @@ exports.updateTrip = async (req, res) => {
       if (trip.journeyType !== "Multi Leg") {
         return res.status(400).json({
           success: false,
-          message: "Journey legs can only be added to Multi Leg trips",
+          message:
+            "Journey legs can only be added to Multi Leg trips",
         });
       }
 
-      // Only append legs after all existing legs are completed.
-      // This prevents skipping an unfinished leg.
       if (trip.tripStatus !== "Completed") {
         return res.status(400).json({
           success: false,
@@ -686,7 +685,9 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 3. Remove fields which should not be changed directly
+    // 3. Remove protected request fields
+    // The existing vehicle assignment remains unchanged.
+    // Drivers must be provided inside journeyLegs[].
     // ---------------------------------------------------------
     delete req.body.vehicleId;
     delete req.body.vendorId;
@@ -695,7 +696,6 @@ exports.updateTrip = async (req, res) => {
     delete req.body.driver2;
     delete req.body.fleetSource;
 
-    // Operational / system-controlled fields
     delete req.body.tripStatus;
     delete req.body.currentLeg;
     delete req.body.totalFuelCost;
@@ -710,7 +710,7 @@ exports.updateTrip = async (req, res) => {
     delete req.body.settlement;
 
     // ---------------------------------------------------------
-    // 4. Update brokerAmount for an existing journey leg
+    // 4. Update brokerAmount for an existing leg
     // ---------------------------------------------------------
     if (
       req.body.legNo !== undefined &&
@@ -739,7 +739,8 @@ exports.updateTrip = async (req, res) => {
       if (!leg.brokerId) {
         return res.status(400).json({
           success: false,
-          message: `brokerAmount can only be updated when brokerId exists for Leg ${legNo}`,
+          message:
+            `brokerAmount can only be updated when brokerId exists for Leg ${legNo}`,
         });
       }
 
@@ -764,7 +765,8 @@ exports.updateTrip = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: `Broker amount updated successfully for Leg ${legNo}`,
+        message:
+          `Broker amount updated successfully for Leg ${legNo}`,
         data: {
           tripId: trip._id,
           tripNo: trip.tripNo,
@@ -776,7 +778,7 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 5. Add driver advance to an existing journey leg
+    // 5. Add driver advance to an existing leg
     // ---------------------------------------------------------
     if (
       req.body.legNo !== undefined &&
@@ -843,7 +845,8 @@ exports.updateTrip = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: `Driver advance updated successfully for Leg ${legNo}`,
+        message:
+          `Driver advance updated successfully for Leg ${legNo}`,
         data: {
           tripId: trip._id,
           tripNo: trip.tripNo,
@@ -860,7 +863,7 @@ exports.updateTrip = async (req, res) => {
       const existingLegCount = trip.journeyLegs.length;
       const newLegs = [];
 
-      // Validate every new leg before modifying the trip document.
+      // Validate all new legs before reserving any resources.
       for (let i = 0; i < req.body.journeyLegs.length; i++) {
         const leg = req.body.journeyLegs[i];
         const newLegNo = existingLegCount + i + 1;
@@ -872,29 +875,25 @@ exports.updateTrip = async (req, res) => {
           });
         }
 
-        // -----------------------------------------------------
-        // From / To validation
-        // -----------------------------------------------------
+        // From / To
         if (!leg.from || !leg.to) {
           return res.status(400).json({
             success: false,
-            message: `From and To are required for Leg ${newLegNo}`,
+            message:
+              `From and To are required for Leg ${newLegNo}`,
           });
         }
 
-        // -----------------------------------------------------
-        // Customer / Broker validation
-        // -----------------------------------------------------
+        // Customer / Broker
         if (!leg.customerId && !leg.brokerId) {
           return res.status(400).json({
             success: false,
-            message: `Either customerId or brokerId is required for Leg ${newLegNo}`,
+            message:
+              `Either customerId or brokerId is required for Leg ${newLegNo}`,
           });
         }
 
-        // -----------------------------------------------------
         // Customer validation
-        // -----------------------------------------------------
         if (leg.customerId) {
           const customer = await Customer.findOne({
             _id: leg.customerId,
@@ -904,14 +903,13 @@ exports.updateTrip = async (req, res) => {
           if (!customer) {
             return res.status(400).json({
               success: false,
-              message: `Customer not found for Leg ${newLegNo}`,
+              message:
+                `Customer not found for Leg ${newLegNo}`,
             });
           }
         }
 
-        // -----------------------------------------------------
         // Broker validation
-        // -----------------------------------------------------
         if (leg.brokerId) {
           const broker = await Broker.findOne({
             _id: leg.brokerId,
@@ -922,21 +920,21 @@ exports.updateTrip = async (req, res) => {
           if (!broker) {
             return res.status(400).json({
               success: false,
-              message: `Active broker not found for Leg ${newLegNo}`,
+              message:
+                `Active broker not found for Leg ${newLegNo}`,
             });
           }
         }
 
-        // -----------------------------------------------------
         // brokerAmount validation
-        // -----------------------------------------------------
         let brokerAmount = 0;
 
         if (leg.brokerAmount !== undefined) {
           if (!leg.brokerId) {
             return res.status(400).json({
               success: false,
-              message: `brokerAmount can only be provided when brokerId exists for Leg ${newLegNo}`,
+              message:
+                `brokerAmount can only be provided when brokerId exists for Leg ${newLegNo}`,
             });
           }
 
@@ -950,14 +948,13 @@ exports.updateTrip = async (req, res) => {
           ) {
             return res.status(400).json({
               success: false,
-              message: `brokerAmount must be a valid number greater than or equal to 0 for Leg ${newLegNo}`,
+              message:
+                `Invalid brokerAmount for Leg ${newLegNo}`,
             });
           }
         }
 
-        // -----------------------------------------------------
         // Driver 1 validation
-        // -----------------------------------------------------
         if (leg.driver1) {
           const driver1 = await Driver.findOne({
             _id: leg.driver1,
@@ -967,22 +964,21 @@ exports.updateTrip = async (req, res) => {
           if (!driver1) {
             return res.status(400).json({
               success: false,
-              message: `Driver 1 not found for Leg ${newLegNo}`,
+              message:
+                `Driver 1 not found for Leg ${newLegNo}`,
             });
           }
 
-          // Reuse from a previous leg is allowed if available.
           if (driver1.availableStatus !== "Available") {
             return res.status(400).json({
               success: false,
-              message: `Driver 1 is not available for Leg ${newLegNo}. Current status: ${driver1.availableStatus}`,
+              message:
+                `Driver 1 is not available for Leg ${newLegNo}. Current status: ${driver1.availableStatus}`,
             });
           }
         }
 
-        // -----------------------------------------------------
         // Driver 2 validation
-        // -----------------------------------------------------
         if (leg.driver2) {
           if (
             leg.driver1 &&
@@ -990,7 +986,8 @@ exports.updateTrip = async (req, res) => {
           ) {
             return res.status(400).json({
               success: false,
-              message: `Driver 1 and Driver 2 cannot be the same for Leg ${newLegNo}`,
+              message:
+                `Driver 1 and Driver 2 cannot be the same for Leg ${newLegNo}`,
             });
           }
 
@@ -1002,21 +999,21 @@ exports.updateTrip = async (req, res) => {
           if (!driver2) {
             return res.status(400).json({
               success: false,
-              message: `Driver 2 not found for Leg ${newLegNo}`,
+              message:
+                `Driver 2 not found for Leg ${newLegNo}`,
             });
           }
 
           if (driver2.availableStatus !== "Available") {
             return res.status(400).json({
               success: false,
-              message: `Driver 2 is not available for Leg ${newLegNo}. Current status: ${driver2.availableStatus}`,
+              message:
+                `Driver 2 is not available for Leg ${newLegNo}. Current status: ${driver2.availableStatus}`,
             });
           }
         }
 
-        // -----------------------------------------------------
         // Driver salary validation
-        // -----------------------------------------------------
         let driverSalary = leg.driverSalary;
 
         if (driverSalary !== undefined && driverSalary !== null) {
@@ -1025,21 +1022,24 @@ exports.updateTrip = async (req, res) => {
           if (!Number.isFinite(driverSalary) || driverSalary < 0) {
             return res.status(400).json({
               success: false,
-              message: `Invalid driverSalary for Leg ${newLegNo}`,
+              message:
+                `Invalid driverSalary for Leg ${newLegNo}`,
             });
           }
         }
 
-        // -----------------------------------------------------
         // Driver advance validation
-        // -----------------------------------------------------
         let driverAdvance = [];
 
-        if (leg.driverAdvance !== undefined && leg.driverAdvance !== null) {
+        if (
+          leg.driverAdvance !== undefined &&
+          leg.driverAdvance !== null
+        ) {
           if (!Array.isArray(leg.driverAdvance)) {
             return res.status(400).json({
               success: false,
-              message: `driverAdvance must be an array for Leg ${newLegNo}`,
+              message:
+                `driverAdvance must be an array for Leg ${newLegNo}`,
             });
           }
 
@@ -1054,7 +1054,8 @@ exports.updateTrip = async (req, res) => {
             ) {
               return res.status(400).json({
                 success: false,
-                message: `Invalid driver advance amount for Leg ${newLegNo}`,
+                message:
+                  `Invalid driver advance amount for Leg ${newLegNo}`,
               });
             }
 
@@ -1064,7 +1065,8 @@ exports.updateTrip = async (req, res) => {
               if (isNaN(advanceDate.getTime())) {
                 return res.status(400).json({
                   success: false,
-                  message: `Invalid driver advance date for Leg ${newLegNo}`,
+                  message:
+                    `Invalid driver advance date for Leg ${newLegNo}`,
                 });
               }
             }
@@ -1078,22 +1080,35 @@ exports.updateTrip = async (req, res) => {
           }));
         }
 
-        // -----------------------------------------------------
-        // Prepare new leg without trusting client operational data
-        // -----------------------------------------------------
-        newLegs.push({
-          ...leg,
+        // Build the new leg with backend-controlled workflow fields.
+        // Client-provided operational state must not be trusted.
+        const {
+          _id,
+          legNo,
+          legStatus,
+          loading,
+          unloading,
+          weighbridge,
+          tripExpense,
+          completedAt,
+          pickupReachedAt,
+          startTime,
+          endTime,
+          arrivalTime,
+          arrivalOdometer,
+          arrivalRemarks,
+          distanceTravelled,
+          ...legData
+        } = leg;
 
-          // Backend-controlled fields
+        newLegs.push({
+          ...legData,
           legNo: newLegNo,
           legStatus: "Pre Trip Pending",
           brokerAmount,
-          ...(driverSalary !== undefined
-            ? { driverSalary }
-            : {}),
+          ...(driverSalary !== undefined ? { driverSalary } : {}),
           driverAdvance,
 
-          // Reset operational fields for a new leg
           pickupReachedAt: undefined,
           loading: undefined,
           startTime: undefined,
@@ -1102,45 +1117,255 @@ exports.updateTrip = async (req, res) => {
           arrivalRemarks: undefined,
           endTime: undefined,
           unloading: undefined,
-          PC: undefined,
+          PC: { amount: 0 },
           pod: undefined,
           weighbridge: undefined,
-          tripExpense: undefined,
-          distanceTravelled: undefined,
+          tripExpense: [],
+          distanceTravelled: 0,
           completedAt: undefined,
         });
       }
 
-      // -----------------------------------------------------
-      // Append only after all new legs pass validation.
-      // Existing legs, including completed Leg 1, remain unchanged.
-      // -----------------------------------------------------
-      trip.journeyLegs.push(...newLegs);
+      // -------------------------------------------------------
+      // 7. Reserve the existing vehicle and new-leg drivers
+      // -------------------------------------------------------
 
-      // -----------------------------------------------------
-      // 7. Reopen trip for the first newly added leg
-      // -----------------------------------------------------
-      trip.currentLeg = existingLegCount + 1;
-      trip.tripStatus = "Pre Trip Pending";
+      let vehicleBefore = null;
+      let vendorVehicleBefore = null;
+      const reservedDriverIds = [];
 
-      // Remove the old trip-level completion timestamp.
-      trip.completedAt = undefined;
+      try {
+        // The same vehicle remains assigned to every journey leg.
+        if (trip.fleetSource === "Own Fleet") {
+          if (!trip.vehicleId) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "No vehicle is assigned to this Own Fleet trip",
+            });
+          }
 
-      await trip.save();
+          vehicleBefore = await Vehicle.findOne({
+            _id: trip.vehicleId,
+            businessId,
+          });
+
+          if (!vehicleBefore) {
+            return res.status(404).json({
+              success: false,
+              message: "Assigned vehicle not found",
+            });
+          }
+
+          // Reserve the existing vehicle; do not change vehicleId.
+          const vehicleResult = await Vehicle.updateOne(
+            {
+              _id: trip.vehicleId,
+              businessId,
+            },
+            {
+              $set: {
+                status: "Reserved",
+                currentTripId: trip._id,
+              },
+            }
+          );
+
+          if (vehicleResult.matchedCount === 0) {
+            throw new Error("Unable to reserve the assigned vehicle");
+          }
+        } else if (trip.fleetSource === "Vendor") {
+          if (!trip.vendorVehicleId) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "No vendor vehicle is assigned to this trip",
+            });
+          }
+
+          vendorVehicleBefore = await VendorVehicle.findOne({
+            _id: trip.vendorVehicleId,
+          });
+
+          if (!vendorVehicleBefore) {
+            return res.status(404).json({
+              success: false,
+              message: "Assigned vendor vehicle not found",
+            });
+          }
+
+          // Requires "Reserved" to exist in the VendorVehicle enum.
+          const vendorVehicleResult =
+            await VendorVehicle.updateOne(
+              { _id: trip.vendorVehicleId },
+              {
+                $set: {
+                  status: "Reserved",
+                  currentTripId: trip._id,
+                },
+              }
+            );
+
+          if (vendorVehicleResult.matchedCount === 0) {
+            throw new Error(
+              "Unable to reserve the assigned vendor vehicle"
+            );
+          }
+        } else {
+          throw new Error("Invalid fleet source");
+        }
+
+        // Reserve each unique driver once, even if a driver appears
+        // in more than one newly appended leg.
+        const driverIds = [
+          ...new Set(
+            newLegs
+              .flatMap((leg) => [leg.driver1, leg.driver2])
+              .filter(Boolean)
+              .map((driverId) => driverId.toString())
+          ),
+        ];
+
+        for (const driverId of driverIds) {
+          const reservedDriver = await Driver.findOneAndUpdate(
+            {
+              _id: driverId,
+              businessId,
+              availableStatus: "Available",
+            },
+            {
+              $set: {
+                availableStatus: "Reserved",
+                currentTripId: trip._id,
+              },
+            },
+            { new: true }
+          );
+
+          if (!reservedDriver) {
+            throw new Error(
+              `Driver ${driverId} is no longer Available. Please refresh and try again.`
+            );
+          }
+
+          reservedDriverIds.push(reservedDriver._id);
+        }
+
+        // -------------------------------------------------------
+        // 8. Append legs and reopen the trip
+        // -------------------------------------------------------
+
+        trip.journeyLegs.push(...newLegs);
+        trip.currentLeg = existingLegCount + 1;
+        trip.tripStatus = "Pre Trip Pending";
+        trip.completedAt = undefined;
+
+        await trip.save();
+      } catch (error) {
+        // Roll back driver reservations if a later step fails.
+        if (reservedDriverIds.length > 0) {
+          await Driver.updateMany(
+            {
+              _id: { $in: reservedDriverIds },
+              businessId,
+              currentTripId: trip._id,
+              availableStatus: "Reserved",
+            },
+            {
+              $set: {
+                availableStatus: "Available",
+              },
+              $unset: {
+                currentTripId: 1,
+              },
+            }
+          );
+        }
+
+        // Restore the vehicle's previous state.
+        if (vehicleBefore) {
+          const vehicleRestore = {
+            $set: {
+              status: vehicleBefore.status,
+            },
+          };
+
+          if (vehicleBefore.currentTripId) {
+            vehicleRestore.$set.currentTripId =
+              vehicleBefore.currentTripId;
+          } else {
+            vehicleRestore.$unset = { currentTripId: 1 };
+          }
+
+          await Vehicle.updateOne(
+            {
+              _id: vehicleBefore._id,
+              businessId,
+              currentTripId: trip._id,
+              status: "Reserved",
+            },
+            vehicleRestore
+          );
+        }
+
+        // Restore the vendor vehicle's previous state.
+        if (vendorVehicleBefore) {
+          const vendorRestore = {
+            $set: {
+              status: vendorVehicleBefore.status,
+            },
+          };
+
+          if (vendorVehicleBefore.currentTripId) {
+            vendorRestore.$set.currentTripId =
+              vendorVehicleBefore.currentTripId;
+          } else {
+            vendorRestore.$unset = { currentTripId: 1 };
+          }
+
+          await VendorVehicle.updateOne(
+            {
+              _id: vendorVehicleBefore._id,
+              currentTripId: trip._id,
+              status: "Reserved",
+            },
+            vendorRestore
+          );
+        }
+
+        throw error;
+      }
+
+      // -------------------------------------------------------
+      // 9. Invalidate the previous post-trip inspection
+      // -------------------------------------------------------
+      // Adding a leg reopens the trip, so the old final inspection
+      // must not block a new inspection after the new final leg.
+      try {
+        await PostTripInspection.deleteOne({
+          businessId,
+          tripId: trip._id,
+        });
+      } catch (inspectionError) {
+        console.error(
+          "Could not invalidate old post-trip inspection:",
+          inspectionError
+        );
+      }
 
       return res.status(200).json({
         success: true,
-        message: "Journey legs added successfully. Trip reopened for the new leg.",
+        message:
+          "Journey legs added successfully. Vehicle and drivers are reserved.",
         data: trip,
       });
     }
 
     // ---------------------------------------------------------
-    // 8. Allowed normal trip fields
+    // 10. Allowed normal trip fields
     // ---------------------------------------------------------
     const allowedTripFields = [
-      // Add fields here that you actually want users
-      // to edit directly.
+      // Add explicitly editable fields here if required.
     ];
 
     for (const field of allowedTripFields) {
@@ -1150,7 +1375,7 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 9. Save normal trip updates
+    // 11. Save normal trip updates
     // ---------------------------------------------------------
     await trip.save();
 
@@ -1161,6 +1386,13 @@ exports.updateTrip = async (req, res) => {
     });
   } catch (error) {
     console.error("Update Trip Error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "A duplicate record prevented this update",
+      });
+    }
 
     return res.status(500).json({
       success: false,
