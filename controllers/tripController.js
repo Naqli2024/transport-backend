@@ -632,23 +632,57 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 1. Prevent update after completion / closure
+    // 1. Closed trips are permanently non-editable
     // ---------------------------------------------------------
-    if (trip.tripStatus === "Completed" || trip.tripStatus === "Closed") {
+    if (trip.tripStatus === "Closed") {
       return res.status(400).json({
         success: false,
-        message: "Completed or closed trips cannot be updated",
+        message: "Closed trips cannot be updated",
       });
     }
 
     // ---------------------------------------------------------
-    // 2. Only Multi Leg trips can have additional journey legs
+    // 2. Validate journeyLegs payload when supplied
     // ---------------------------------------------------------
-    if (req.body.journeyLegs && trip.journeyType !== "Multi Leg") {
-      return res.status(400).json({
-        success: false,
-        message: "Journey legs can only be added to Multi Leg trips",
-      });
+    if (req.body.journeyLegs !== undefined) {
+      if (
+        !Array.isArray(req.body.journeyLegs) ||
+        req.body.journeyLegs.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "journeyLegs must be a non-empty array",
+        });
+      }
+
+      if (trip.journeyType !== "Multi Leg") {
+        return res.status(400).json({
+          success: false,
+          message: "Journey legs can only be added to Multi Leg trips",
+        });
+      }
+
+      // Only append legs after all existing legs are completed.
+      // This prevents skipping an unfinished leg.
+      if (trip.tripStatus !== "Completed") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "New journey legs can only be added after the current trip is completed",
+        });
+      }
+
+      const allExistingLegsCompleted = trip.journeyLegs.every(
+        (leg) => leg.legStatus === "Completed"
+      );
+
+      if (!allExistingLegsCompleted) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "All existing journey legs must be completed before adding new legs",
+        });
+      }
     }
 
     // ---------------------------------------------------------
@@ -677,11 +711,11 @@ exports.updateTrip = async (req, res) => {
 
     // ---------------------------------------------------------
     // 4. Update brokerAmount for an existing journey leg
-    //
-    // brokerAmount is OPTIONAL.
-    // It is processed only when it is actually supplied.
     // ---------------------------------------------------------
-    if (req.body.legNo !== undefined && req.body.brokerAmount !== undefined) {
+    if (
+      req.body.legNo !== undefined &&
+      req.body.brokerAmount !== undefined
+    ) {
       const legNo = Number(req.body.legNo);
 
       if (!Number.isInteger(legNo) || legNo <= 0) {
@@ -691,7 +725,9 @@ exports.updateTrip = async (req, res) => {
         });
       }
 
-      const leg = trip.journeyLegs.find((item) => Number(item.legNo) === legNo);
+      const leg = trip.journeyLegs.find(
+        (item) => Number(item.legNo) === legNo
+      );
 
       if (!leg) {
         return res.status(404).json({
@@ -700,7 +736,6 @@ exports.updateTrip = async (req, res) => {
         });
       }
 
-      // brokerAmount can only be updated for broker trips/legs
       if (!leg.brokerId) {
         return res.status(400).json({
           success: false,
@@ -741,9 +776,12 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 5. Update / Add driver advance for an existing journey leg
+    // 5. Add driver advance to an existing journey leg
     // ---------------------------------------------------------
-    if (req.body.legNo !== undefined && req.body.driverAdvance !== undefined) {
+    if (
+      req.body.legNo !== undefined &&
+      req.body.driverAdvance !== undefined
+    ) {
       const legNo = Number(req.body.legNo);
 
       if (!Number.isInteger(legNo) || legNo <= 0) {
@@ -753,7 +791,9 @@ exports.updateTrip = async (req, res) => {
         });
       }
 
-      const leg = trip.journeyLegs.find((item) => Number(item.legNo) === legNo);
+      const leg = trip.journeyLegs.find(
+        (item) => Number(item.legNo) === legNo
+      );
 
       if (!leg) {
         return res.status(404).json({
@@ -762,14 +802,15 @@ exports.updateTrip = async (req, res) => {
         });
       }
 
-      const { amount, date } = req.body.driverAdvance;
+      const advance = req.body.driverAdvance;
 
       if (
-        amount === undefined ||
-        amount === null ||
-        amount === "" ||
-        !Number.isFinite(Number(amount)) ||
-        Number(amount) < 0
+        !advance ||
+        advance.amount === undefined ||
+        advance.amount === null ||
+        advance.amount === "" ||
+        !Number.isFinite(Number(advance.amount)) ||
+        Number(advance.amount) < 0
       ) {
         return res.status(400).json({
           success: false,
@@ -777,9 +818,10 @@ exports.updateTrip = async (req, res) => {
         });
       }
 
-      const advanceAmount = Number(amount);
-
-      const advanceDate = date ? new Date(date) : new Date();
+      const advanceAmount = Number(advance.amount);
+      const advanceDate = advance.date
+        ? new Date(advance.date)
+        : new Date();
 
       if (isNaN(advanceDate.getTime())) {
         return res.status(400).json({
@@ -814,11 +856,21 @@ exports.updateTrip = async (req, res) => {
     // ---------------------------------------------------------
     // 6. Add new journey legs
     // ---------------------------------------------------------
-    if (req.body.journeyLegs && Array.isArray(req.body.journeyLegs)) {
+    if (req.body.journeyLegs !== undefined) {
       const existingLegCount = trip.journeyLegs.length;
+      const newLegs = [];
 
+      // Validate every new leg before modifying the trip document.
       for (let i = 0; i < req.body.journeyLegs.length; i++) {
         const leg = req.body.journeyLegs[i];
+        const newLegNo = existingLegCount + i + 1;
+
+        if (!leg || typeof leg !== "object" || Array.isArray(leg)) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid journey leg data for Leg ${newLegNo}`,
+          });
+        }
 
         // -----------------------------------------------------
         // From / To validation
@@ -826,9 +878,7 @@ exports.updateTrip = async (req, res) => {
         if (!leg.from || !leg.to) {
           return res.status(400).json({
             success: false,
-            message: `From and To are required for Leg ${
-              existingLegCount + i + 1
-            }`,
+            message: `From and To are required for Leg ${newLegNo}`,
           });
         }
 
@@ -838,9 +888,7 @@ exports.updateTrip = async (req, res) => {
         if (!leg.customerId && !leg.brokerId) {
           return res.status(400).json({
             success: false,
-            message: `Either customerId or brokerId is required for Leg ${
-              existingLegCount + i + 1
-            }`,
+            message: `Either customerId or brokerId is required for Leg ${newLegNo}`,
           });
         }
 
@@ -856,7 +904,7 @@ exports.updateTrip = async (req, res) => {
           if (!customer) {
             return res.status(400).json({
               success: false,
-              message: `Customer not found for Leg ${existingLegCount + i + 1}`,
+              message: `Customer not found for Leg ${newLegNo}`,
             });
           }
         }
@@ -874,17 +922,13 @@ exports.updateTrip = async (req, res) => {
           if (!broker) {
             return res.status(400).json({
               success: false,
-              message: `Active broker not found for Leg ${
-                existingLegCount + i + 1
-              }`,
+              message: `Active broker not found for Leg ${newLegNo}`,
             });
           }
         }
 
         // -----------------------------------------------------
-        // brokerAmount is OPTIONAL
-        //
-        // If provided, it must be valid and brokerId must exist.
+        // brokerAmount validation
         // -----------------------------------------------------
         let brokerAmount = 0;
 
@@ -892,9 +936,7 @@ exports.updateTrip = async (req, res) => {
           if (!leg.brokerId) {
             return res.status(400).json({
               success: false,
-              message: `brokerAmount can only be provided when brokerId exists for Leg ${
-                existingLegCount + i + 1
-              }`,
+              message: `brokerAmount can only be provided when brokerId exists for Leg ${newLegNo}`,
             });
           }
 
@@ -908,9 +950,7 @@ exports.updateTrip = async (req, res) => {
           ) {
             return res.status(400).json({
               success: false,
-              message: `brokerAmount must be a valid number greater than or equal to 0 for Leg ${
-                existingLegCount + i + 1
-              }`,
+              message: `brokerAmount must be a valid number greater than or equal to 0 for Leg ${newLegNo}`,
             });
           }
         }
@@ -927,29 +967,15 @@ exports.updateTrip = async (req, res) => {
           if (!driver1) {
             return res.status(400).json({
               success: false,
-              message: `Driver 1 not found for Leg ${existingLegCount + i + 1}`,
+              message: `Driver 1 not found for Leg ${newLegNo}`,
             });
           }
 
-          // Prevent same driver in another leg
-          const driverAlreadyUsed = trip.journeyLegs.some(
-            (existingLeg) =>
-              existingLeg.driver1?.toString() === leg.driver1.toString() ||
-              existingLeg.driver2?.toString() === leg.driver1.toString(),
-          );
-
-          const driverUsedInNewLeg = req.body.journeyLegs
-            .slice(0, i)
-            .some(
-              (newLeg) =>
-                newLeg.driver1?.toString() === leg.driver1.toString() ||
-                newLeg.driver2?.toString() === leg.driver1.toString(),
-            );
-
-          if (driverAlreadyUsed || driverUsedInNewLeg) {
+          // Reuse from a previous leg is allowed if available.
+          if (driver1.availableStatus !== "Available") {
             return res.status(400).json({
               success: false,
-              message: `Driver 1 is already assigned to another leg`,
+              message: `Driver 1 is not available for Leg ${newLegNo}. Current status: ${driver1.availableStatus}`,
             });
           }
         }
@@ -964,9 +990,7 @@ exports.updateTrip = async (req, res) => {
           ) {
             return res.status(400).json({
               success: false,
-              message: `Driver 1 and Driver 2 cannot be the same for Leg ${
-                existingLegCount + i + 1
-              }`,
+              message: `Driver 1 and Driver 2 cannot be the same for Leg ${newLegNo}`,
             });
           }
 
@@ -978,29 +1002,14 @@ exports.updateTrip = async (req, res) => {
           if (!driver2) {
             return res.status(400).json({
               success: false,
-              message: `Driver 2 not found for Leg ${existingLegCount + i + 1}`,
+              message: `Driver 2 not found for Leg ${newLegNo}`,
             });
           }
 
-          // Prevent same driver in another leg
-          const driverAlreadyUsed = trip.journeyLegs.some(
-            (existingLeg) =>
-              existingLeg.driver1?.toString() === leg.driver2.toString() ||
-              existingLeg.driver2?.toString() === leg.driver2.toString(),
-          );
-
-          const driverUsedInNewLeg = req.body.journeyLegs
-            .slice(0, i)
-            .some(
-              (newLeg) =>
-                newLeg.driver1?.toString() === leg.driver2.toString() ||
-                newLeg.driver2?.toString() === leg.driver2.toString(),
-            );
-
-          if (driverAlreadyUsed || driverUsedInNewLeg) {
+          if (driver2.availableStatus !== "Available") {
             return res.status(400).json({
               success: false,
-              message: `Driver 2 is already assigned to another leg`,
+              message: `Driver 2 is not available for Leg ${newLegNo}. Current status: ${driver2.availableStatus}`,
             });
           }
         }
@@ -1008,15 +1017,15 @@ exports.updateTrip = async (req, res) => {
         // -----------------------------------------------------
         // Driver salary validation
         // -----------------------------------------------------
-        if (leg.driverSalary !== undefined && leg.driverSalary !== null) {
-          const salary = Number(leg.driverSalary);
+        let driverSalary = leg.driverSalary;
 
-          if (!Number.isFinite(salary) || salary < 0) {
+        if (driverSalary !== undefined && driverSalary !== null) {
+          driverSalary = Number(driverSalary);
+
+          if (!Number.isFinite(driverSalary) || driverSalary < 0) {
             return res.status(400).json({
               success: false,
-              message: `Invalid driverSalary for Leg ${
-                existingLegCount + i + 1
-              }`,
+              message: `Invalid driverSalary for Leg ${newLegNo}`,
             });
           }
         }
@@ -1024,18 +1033,19 @@ exports.updateTrip = async (req, res) => {
         // -----------------------------------------------------
         // Driver advance validation
         // -----------------------------------------------------
+        let driverAdvance = [];
+
         if (leg.driverAdvance !== undefined && leg.driverAdvance !== null) {
           if (!Array.isArray(leg.driverAdvance)) {
             return res.status(400).json({
               success: false,
-              message: `driverAdvance must be an array for Leg ${
-                existingLegCount + i + 1
-              }`,
+              message: `driverAdvance must be an array for Leg ${newLegNo}`,
             });
           }
 
           for (const advance of leg.driverAdvance) {
             if (
+              !advance ||
               advance.amount === undefined ||
               advance.amount === null ||
               advance.amount === "" ||
@@ -1044,9 +1054,7 @@ exports.updateTrip = async (req, res) => {
             ) {
               return res.status(400).json({
                 success: false,
-                message: `Invalid driver advance amount for Leg ${
-                  existingLegCount + i + 1
-                }`,
+                message: `Invalid driver advance amount for Leg ${newLegNo}`,
               });
             }
 
@@ -1056,29 +1064,36 @@ exports.updateTrip = async (req, res) => {
               if (isNaN(advanceDate.getTime())) {
                 return res.status(400).json({
                   success: false,
-                  message: `Invalid driver advance date for Leg ${
-                    existingLegCount + i + 1
-                  }`,
+                  message: `Invalid driver advance date for Leg ${newLegNo}`,
                 });
               }
             }
           }
+
+          driverAdvance = leg.driverAdvance.map((advance) => ({
+            amount: Number(advance.amount),
+            ...(advance.date
+              ? { date: new Date(advance.date) }
+              : {}),
+          }));
         }
 
         // -----------------------------------------------------
-        // Create new journey leg
+        // Prepare new leg without trusting client operational data
         // -----------------------------------------------------
-        trip.journeyLegs.push({
+        newLegs.push({
           ...leg,
 
-          // Backend controlled fields
-          legNo: existingLegCount + i + 1,
+          // Backend-controlled fields
+          legNo: newLegNo,
           legStatus: "Pre Trip Pending",
-
-          // Broker amount
           brokerAmount,
+          ...(driverSalary !== undefined
+            ? { driverSalary }
+            : {}),
+          driverAdvance,
 
-          // Don't allow clients to set operational fields
+          // Reset operational fields for a new leg
           pickupReachedAt: undefined,
           loading: undefined,
           startTime: undefined,
@@ -1096,29 +1111,36 @@ exports.updateTrip = async (req, res) => {
         });
       }
 
+      // -----------------------------------------------------
+      // Append only after all new legs pass validation.
+      // Existing legs, including completed Leg 1, remain unchanged.
+      // -----------------------------------------------------
+      trip.journeyLegs.push(...newLegs);
+
+      // -----------------------------------------------------
+      // 7. Reopen trip for the first newly added leg
+      // -----------------------------------------------------
+      trip.currentLeg = existingLegCount + 1;
+      trip.tripStatus = "Pre Trip Pending";
+
+      // Remove the old trip-level completion timestamp.
+      trip.completedAt = undefined;
+
       await trip.save();
 
       return res.status(200).json({
         success: true,
-        message: "Journey legs added successfully",
+        message: "Journey legs added successfully. Trip reopened for the new leg.",
         data: trip,
       });
     }
 
     // ---------------------------------------------------------
-    // 7. Allowed normal trip fields
+    // 8. Allowed normal trip fields
     // ---------------------------------------------------------
     const allowedTripFields = [
       // Add fields here that you actually want users
       // to edit directly.
-      //
-      // Example:
-      // "commodity",
-      // "weight",
-      // "uom",
-      // "amountPerTon",
-      // "loadType",
-      // "paymentType",
     ];
 
     for (const field of allowedTripFields) {
@@ -1128,7 +1150,7 @@ exports.updateTrip = async (req, res) => {
     }
 
     // ---------------------------------------------------------
-    // 8. Save normal trip updates
+    // 9. Save normal trip updates
     // ---------------------------------------------------------
     await trip.save();
 
@@ -3287,8 +3309,7 @@ exports.completeWeighbridge = async (req, res) => {
       // UPDATE TOTAL EXPENSE
       // =======================================================
 
-      trip.totalExpense =
-        Number(trip.totalExpense || 0) + parsedWeighbridgeFee;
+      trip.totalExpense = Number(trip.totalExpense || 0) + parsedWeighbridgeFee;
     }
 
     // =========================================================
@@ -3627,13 +3648,7 @@ exports.createFuelEntry = async (req, res) => {
     // VALIDATE FUEL TYPE
     // =========================================================
 
-    const allowedFuelTypes = [
-      "Diesel",
-      "Petrol",
-      "CNG",
-      "LNG",
-      "EV",
-    ];
+    const allowedFuelTypes = ["Diesel", "Petrol", "CNG", "LNG", "EV"];
 
     if (!fuelType) {
       return res.status(400).json({
@@ -3819,8 +3834,7 @@ exports.createFuelEntry = async (req, res) => {
     // UPDATE TOTAL FUEL COST
     // =========================================================
 
-    trip.totalFuelCost =
-      Number(trip.totalFuelCost || 0) + amount;
+    trip.totalFuelCost = Number(trip.totalFuelCost || 0) + amount;
 
     // =========================================================
     // TOTAL FUEL ENTRIES
@@ -4052,8 +4066,7 @@ exports.updateFuelEntry = async (req, res) => {
     if (fuel.driverId?.toString() !== driverId.toString()) {
       return res.status(403).json({
         success: false,
-        message:
-          "Only the driver who created this fuel entry can update it",
+        message: "Only the driver who created this fuel entry can update it",
       });
     }
 
@@ -4080,26 +4093,14 @@ exports.updateFuelEntry = async (req, res) => {
       });
     }
 
-    const allowedFuelTypes = [
-      "Diesel",
-      "Petrol",
-      "CNG",
-      "LNG",
-      "EV",
-    ];
+    const allowedFuelTypes = ["Diesel", "Petrol", "CNG", "LNG", "EV"];
 
-    const newFuelType =
-      fuelType !== undefined ? fuelType : fuel.fuelType;
+    const newFuelType = fuelType !== undefined ? fuelType : fuel.fuelType;
 
     const newQuantity =
-      quantity !== undefined
-        ? Number(quantity)
-        : Number(fuel.quantity);
+      quantity !== undefined ? Number(quantity) : Number(fuel.quantity);
 
-    const newRate =
-      rate !== undefined
-        ? Number(rate)
-        : Number(fuel.rate);
+    const newRate = rate !== undefined ? Number(rate) : Number(fuel.rate);
 
     // ==============================
     // VALIDATION
@@ -4121,11 +4122,7 @@ exports.updateFuelEntry = async (req, res) => {
 
     if (
       quantity !== undefined &&
-      (
-        quantity === "" ||
-        Number.isNaN(newQuantity) ||
-        newQuantity <= 0
-      )
+      (quantity === "" || Number.isNaN(newQuantity) || newQuantity <= 0)
     ) {
       return res.status(400).json({
         success: false,
@@ -4135,11 +4132,7 @@ exports.updateFuelEntry = async (req, res) => {
 
     if (
       rate !== undefined &&
-      (
-        rate === "" ||
-        Number.isNaN(newRate) ||
-        newRate < 0
-      )
+      (rate === "" || Number.isNaN(newRate) || newRate < 0)
     ) {
       return res.status(400).json({
         success: false,
@@ -4180,14 +4173,9 @@ exports.updateFuelEntry = async (req, res) => {
     // ==============================
 
     fuel.fuelStation =
-      fuelStation !== undefined
-        ? fuelStation
-        : fuel.fuelStation;
+      fuelStation !== undefined ? fuelStation : fuel.fuelStation;
 
-    fuel.location =
-      location !== undefined
-        ? location
-        : fuel.location;
+    fuel.location = location !== undefined ? location : fuel.location;
 
     fuel.fuelType = newFuelType;
 
@@ -4198,21 +4186,13 @@ exports.updateFuelEntry = async (req, res) => {
     fuel.amount = newAmount;
 
     fuel.paymentMode =
-      paymentMode !== undefined
-        ? paymentMode
-        : fuel.paymentMode;
+      paymentMode !== undefined ? paymentMode : fuel.paymentMode;
 
-    fuel.billNo =
-      billNo !== undefined
-        ? billNo
-        : fuel.billNo;
+    fuel.billNo = billNo !== undefined ? billNo : fuel.billNo;
 
     fuel.billPath = billPath;
 
-    fuel.remarks =
-      remarks !== undefined
-        ? remarks
-        : fuel.remarks;
+    fuel.remarks = remarks !== undefined ? remarks : fuel.remarks;
 
     await fuel.save();
 
@@ -4226,14 +4206,12 @@ exports.updateFuelEntry = async (req, res) => {
     });
 
     trip.totalFuelQuantity = entries.reduce(
-      (sum, item) =>
-        sum + Number(item.quantity || 0),
+      (sum, item) => sum + Number(item.quantity || 0),
       0,
     );
 
     trip.totalFuelCost = entries.reduce(
-      (sum, item) =>
-        sum + Number(item.amount || 0),
+      (sum, item) => sum + Number(item.amount || 0),
       0,
     );
 
@@ -4247,16 +4225,14 @@ exports.updateFuelEntry = async (req, res) => {
 
     const fuelHistoryEntry = trip.totalFuelEntries.find(
       (item) =>
-        item.fuelEntryId &&
-        item.fuelEntryId.toString() === fuel._id.toString(),
+        item.fuelEntryId && item.fuelEntryId.toString() === fuel._id.toString(),
     );
 
     if (fuelHistoryEntry) {
       fuelHistoryEntry.quantity = newQuantity;
       fuelHistoryEntry.amount = newAmount;
-      fuelHistoryEntry.remarks = remarks !== undefined
-        ? remarks
-        : fuelHistoryEntry.remarks;
+      fuelHistoryEntry.remarks =
+        remarks !== undefined ? remarks : fuelHistoryEntry.remarks;
     } else {
       /*
        * Fallback for old records that were created
@@ -4295,8 +4271,7 @@ exports.updateFuelEntry = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        error.message || "Failed to update fuel entry",
+      message: error.message || "Failed to update fuel entry",
     });
   }
 };
@@ -4844,11 +4819,7 @@ exports.updateTripExpense = async (req, res) => {
     const businessId = req.driver?.businessId;
     const { expenseId } = req.params;
 
-    const {
-      amount,
-      expenseType,
-      remarks,
-    } = req.body || {};
+    const { amount, expenseType, remarks } = req.body || {};
 
     // =================================================
     // VALIDATE BUSINESS
@@ -4898,8 +4869,7 @@ exports.updateTripExpense = async (req, res) => {
     // =================================================
 
     const leg = (trip.journeyLegs || []).find(
-      (item) =>
-        Number(item.legNo) === Number(expense.legNo),
+      (item) => Number(item.legNo) === Number(expense.legNo),
     );
 
     if (!leg) {
@@ -4924,8 +4894,7 @@ exports.updateTripExpense = async (req, res) => {
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Expense amount must be greater than 0",
+          message: "Expense amount must be greater than 0",
         });
       }
 
@@ -4958,21 +4927,16 @@ exports.updateTripExpense = async (req, res) => {
       // LOADING / UNLOADING / PC UNIQUE PER LEG
       // -----------------------------------------------
 
-      if (
-        ["Loading", "Unloading", "PC"].includes(
+      if (["Loading", "Unloading", "PC"].includes(expenseType)) {
+        const existingExpense = await TripExpense.findOne({
+          businessId,
+          tripId: expense.tripId,
+          legNo: expense.legNo,
           expenseType,
-        )
-      ) {
-        const existingExpense =
-          await TripExpense.findOne({
-            businessId,
-            tripId: expense.tripId,
-            legNo: expense.legNo,
-            expenseType,
-            _id: {
-              $ne: expense._id,
-            },
-          });
+          _id: {
+            $ne: expense._id,
+          },
+        });
 
         if (existingExpense) {
           return res.status(400).json({
@@ -5021,15 +4985,9 @@ exports.updateTripExpense = async (req, res) => {
       // Delete old file only after successful save.
       if (oldBill) {
         try {
-          await deleteFile(
-            oldBill,
-            businessId,
-          );
+          await deleteFile(oldBill, businessId);
         } catch (deleteError) {
-          console.error(
-            "Failed to delete old expense bill:",
-            deleteError,
-          );
+          console.error("Failed to delete old expense bill:", deleteError);
         }
       }
     } else {
@@ -5053,8 +5011,7 @@ exports.updateTripExpense = async (req, res) => {
     // =================================================
 
     trip.totalExpense = allExpenses.reduce(
-      (sum, item) =>
-        sum + Number(item.amount || 0),
+      (sum, item) => sum + Number(item.amount || 0),
       0,
     );
 
@@ -5065,16 +5022,14 @@ exports.updateTripExpense = async (req, res) => {
     // This is an ARRAY, NOT A NUMBER.
     // =================================================
 
-    trip.totalExpenseEntries = allExpenses.map(
-      (item) => ({
-        expenseId: item._id,
-        legNo: item.legNo,
-        expenseType: item.expenseType,
-        amount: Number(item.amount || 0),
-        date: item.createdAt || new Date(),
-        remarks: item.remarks || "",
-      }),
-    );
+    trip.totalExpenseEntries = allExpenses.map((item) => ({
+      expenseId: item._id,
+      legNo: item.legNo,
+      expenseType: item.expenseType,
+      amount: Number(item.amount || 0),
+      date: item.createdAt || new Date(),
+      remarks: item.remarks || "",
+    }));
 
     // =================================================
     // SAVE TRIP
@@ -5088,26 +5043,19 @@ exports.updateTripExpense = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Trip expense updated successfully by admin",
+      message: "Trip expense updated successfully by admin",
       data: expense,
       tripSummary: {
         totalExpense: trip.totalExpense,
-        totalExpenseEntries:
-          trip.totalExpenseEntries,
+        totalExpenseEntries: trip.totalExpenseEntries,
       },
     });
   } catch (error) {
-    console.error(
-      "updateTripExpense error:",
-      error,
-    );
+    console.error("updateTripExpense error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        error.message ||
-        "Failed to update trip expense",
+      message: error.message || "Failed to update trip expense",
     });
   }
 };
